@@ -1,0 +1,159 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==========================================
+    // Helper Security Functions (RBAC)
+    // ==========================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getUserRole() {
+      return getUserData().role;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        getUserRole() == 'admin' ||
+        request.auth.token.role == 'admin'
+      );
+    }
+
+    function isManager() {
+      return isAuthenticated() && (
+        getUserRole() == 'manager' ||
+        request.auth.token.role == 'manager' ||
+        isAdmin()
+      );
+    }
+
+    function isEmployee() {
+      return isAuthenticated() && (
+        getUserRole() == 'employee' ||
+        isManager()
+      );
+    }
+
+    // ==========================================
+    // Users Collection
+    // ==========================================
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Only Admin can change user roles; users can update their own non-role profile fields
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'permissions'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================
+    // Employees Collection
+    // ==========================================
+    match /employees/{employeeId} {
+      allow read: if isAuthenticated();
+      allow write: if isManager();
+    }
+
+    // ==========================================
+    // Customers Collection
+    // ==========================================
+    match /customers/{customerId} {
+      allow read: if isEmployee();
+      allow write: if isEmployee();
+    }
+
+    // ==========================================
+    // Conversations Collection
+    // ==========================================
+    match /conversations/{conversationId} {
+      // Admin/Manager can view all conversations.
+      // Employee can view unassigned conversations or conversations assigned to them.
+      allow read: if isManager() || (
+        isEmployee() && (
+          resource.data.assignedEmployeeId == null ||
+          resource.data.assignedEmployeeId == request.auth.uid
+        )
+      );
+
+      // Admin/Manager can write any conversation.
+      // Employee can claim unassigned or update their assigned conversation.
+      allow write: if isManager() || (
+        isEmployee() && (
+          resource.data.assignedEmployeeId == null ||
+          resource.data.assignedEmployeeId == request.auth.uid ||
+          request.resource.data.assignedEmployeeId == request.auth.uid
+        )
+      );
+    }
+
+    // ==========================================
+    // Messages Collection
+    // ==========================================
+    match /messages/{messageId} {
+      allow read: if isEmployee();
+      allow create: if isEmployee();
+      allow update: if isManager();
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================
+    // Channels & Integration Credentials
+    // ==========================================
+    match /channels/{channelId} {
+      allow read: if isEmployee();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================
+    // Tags, Activities, Notes
+    // ==========================================
+    match /tags/{tagId} {
+      allow read: if isEmployee();
+      allow write: if isManager();
+    }
+
+    match /activities/{activityId} {
+      allow read: if isEmployee();
+      allow create: if isEmployee();
+      allow update, delete: if isManager();
+    }
+
+    match /notes/{noteId} {
+      allow read: if isEmployee();
+      allow create: if isEmployee();
+      allow update, delete: if isManager() || (
+        isEmployee() && resource.data.authorId == request.auth.uid
+      );
+    }
+
+    // ==========================================
+    // Sales Pipelines & Stages
+    // ==========================================
+    match /pipelines/{dealId} {
+      allow read: if isEmployee();
+      allow write: if isEmployee();
+    }
+
+    match /pipelineStages/{stageId} {
+      allow read: if isEmployee();
+      allow write: if isManager();
+    }
+
+    // ==========================================
+    // Settings & Organization Profile
+    // ==========================================
+    match /settings/{settingId} {
+      allow read: if isEmployee();
+      allow write: if isAdmin();
+    }
+  }
+}
