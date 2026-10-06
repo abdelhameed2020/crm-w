@@ -11,6 +11,7 @@ import { PipelinePage } from './pages/pipeline/PipelinePage';
 import { EmployeesPage } from './pages/employees/EmployeesPage';
 import { ReportsPage } from './pages/reports/ReportsPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
+import { WhatsAppAccountsPage } from './pages/whatsapp/WhatsAppAccountsPage';
 
 export const App: React.FC = () => {
   return (
@@ -38,6 +39,7 @@ export const App: React.FC = () => {
               {/* Admin Only Route */}
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route path="settings" element={<SettingsPage />} />
+                <Route path="whatsapp-accounts" element={<WhatsAppAccountsPage />} />
               </Route>
             </Route>
           </Route>

@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gateway": "npm --prefix gateway start",
+    "gateway:dev": "npm --prefix gateway run dev",
+    "gateway:build": "npm --prefix gateway run build"
   },
   "dependencies": {
     "clsx": "^2.1.1",

@@ -9,6 +9,7 @@ import {
   BarChart3,
   Settings,
   Shield,
+  Smartphone,
   LogOut,
   X
 } from 'lucide-react';
@@ -28,6 +29,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { name: 'العملاء والـ Leads', href: '/customers', icon: Users, visible: true },
     { name: 'مسار المبيعات', href: '/pipeline', icon: GitBranch, visible: true },
     { name: 'فريق العمل', href: '/employees', icon: UserCheck, visible: isAdmin || isManager },
+    { name: 'حسابات واتساب', href: '/whatsapp-accounts', icon: Smartphone, badge: 'تجريبي', visible: isAdmin },
     { name: 'التقارير والأداء', href: '/reports', icon: BarChart3, visible: isAdmin || isManager },
     { name: 'الإعدادات والقنوات', href: '/settings', icon: Settings, visible: isAdmin },
   ].filter((item) => item.visible);

@@ -16,6 +16,7 @@ export const COLLECTIONS = {
   PIPELINE_STAGES: 'pipelineStages',
   ASSIGNMENTS: 'assignments',
   SETTINGS: 'settings',
+  WHATSAPP_ACCOUNTS: 'whatsappAccounts',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

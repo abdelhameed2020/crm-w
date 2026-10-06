@@ -189,27 +189,58 @@ CRM/
 | **التقارير (`reports`)** | تقارير شاملة للمنظمة | تقارير أداء الفريق | مؤشرات إنجاز الموظف الخاصة فقط | استعلامات مخصصة حسب الدور بدون تجاوز |
 | **إعدادات القنوات (`channels`)** | ربط وتعديل وتعيين المفاتيح | قراءة حالة النشاط | استخدام القناة للرد فقط | أسرار Meta معزولة في `channel_secrets` |
 | **إعدادات المنشأة (`settings`)** | تحكم كامل بالنظام | قراءة فقط | محجوب كلياً | حماية كاملة على مستوى Routing و Rules |
+| **حسابات واتساب (`whatsappAccounts`)** | إضافة وحذف وتوليد QR | قراءة الحسابات المصرحة | استخدام الخطوط المصرح بها | قراءة للموظف وكتابة حصراً للـ Admin |
 
 ---
 
-## 5. معمارية القنوات المتعددة (Multi-Channel Architecture)
+## 5. معمارية القنوات المتعددة واستراتيجية التبديل (Multi-Channel & Swappable Provider Architecture)
 
-تم تطبيق نمط التصميم **Strategy Pattern** عبر:
+تم تطبيق نمط التصميم **Strategy Pattern** لتجريد جميع قنوات المحادثة:
 - واجهة `IChannelProvider`: تحدد العقود المشتركة:
   - `initialize(account)`
   - `checkHealth(account)`
   - `sendMessage(account, payload)`
   - `parseWebhookPayload(rawPayload)`
-- فئة `ChannelManager`: تدير تسجيل واختيار المزود المناسب بناءً على نوع القناة تلقائياً.
+- فئة `ChannelManager`: تدير تسجيل واختيار المزود المناسب بناءً على نوع القناة وعلم البيئة (`Feature Flag`):
+  - `VITE_WHATSAPP_PROVIDER=web`: يفعل `WhatsAppWebProvider` المرتبط بالبوابة التجريبية المستقلة (Gateway).
+  - `VITE_WHATSAPP_PROVIDER=cloud`: يفعل `WhatsAppCloudProvider` المخصص لـ WhatsApp Cloud API الرسمي لاحقاً دون تعديل سطر واحد في واجهة الـ CRM أو الـ Unified Inbox.
 - مزودات مستقلة:
-  - `WhatsAppProvider`
+  - `WhatsAppWebProvider` (تجريبي - Phase 3)
+  - `WhatsAppCloudProvider` (رسمي - Meta Cloud API)
   - `MessengerProvider`
   - `InstagramProvider`
   - `WebsiteChatProvider`
 
 ---
 
-## 6. استراتيجية الأمان (Security Strategy & Firestore Rules)
+## 6. معمارية بوابة واتساب التجريبية (WhatsApp Web Gateway Architecture)
+
+### 6.1 اختيار المكتبة (Library Selection Rationale)
+تم اختيار مكتبة **`@whiskeysockets/baileys`** بدلاً من `whatsapp-web.js`:
+1. **استهلاك الذاكرة والأداء**: تتواصل Baileys مباشرة مع خوادم واتساب عبر بروتوكول WebSocket والـ Multi-Device Binary Protobuf، مما يستهلك أقل من 35 ميجابايت من الذاكرة لكل خط، مقارنة بـ `whatsapp-web.js` التي تتطلب متصفح Chromium/Puppeteer ضخم (أكثر من 450 ميجابايت لكل جلسة ومشاكل استقرار على خوادم السحاب).
+2. **استقرار البيئة ونظام التشغيل**: تدعم Baileys بيئة Node.js 22 الحديثة ونظام Windows بدون الحاجة إلى تثبيت binary drivers لمتصفح Chrome.
+3. **توليد QR Code نقي**: تُصدر Baileys بيانات الرمز كنص خام يُحول فورياً عبر `qrcode` إلى صورة Base64 Data URL لتُعرض داخل واجهة الـ CRM بسلاسة.
+
+### 6.2 إدارة الجلسات والأمان (Session Isolation & Security)
+- **عزل المفاتيح والرموز**: تُخزن مفاتيح التشفير وجلسات Baileys حصراً داخل مسار محلي مشفر ومحمي `gateway/sessions/<accountId>/`.
+- **ممنوع تخزين التوكن في Firestore**: لا تُخزن أية رموز جلسة أو مفاتيح تشفير في Firestore أو Git (مدرجة في `.gitignore`).
+- **بيانات Firestore المسموحة (`whatsappAccounts`)**:
+  - `id`, `displayName`, `phoneNumber`, `status`, `assignedEmployees`, `lastConnectedAt`, `createdAt`, `updatedAt`.
+- **حماية خادم البوابة**: خادم الـ Gateway محمي عبر Header سري `x-gateway-key` يمنع أي وصول غير مصرح به.
+
+### 6.3 المزامنة التلقائية مع الـ CRM (Inbound Sync Service)
+عند وصول أي رسالة جديدة عبر واتساب:
+1. التحقق من العميل في `customers`: في حال عدم وجوده، يتم إنشاؤه تلقائياً بالاسم ورقم الهاتف والوسم `whatsapp`.
+2. التحقق من المحادثة في `conversations`: في حال وجود محادثة مفتوحة، يتم تحديث آخر رسالة وتوقيتها وزيادة `unreadCount`، أو إنشاء محادثة جديدة تلقائياً.
+3. إنشاء سجل الرسالة في `messages`: تسجيل نص الرسالة ونوعها وتنزيل الوسائط المرفقة (صور، مستندات، مقاطع صوتية) وتخزينها في مجلد `gateway/uploads/` برابط مباشر.
+
+### 6.4 استراتيجية إعادة الاتصال (Exponential Backoff Reconnection)
+- عند انقطاع الاتصال العرضي بسبب الشبكة، يعيد الخادم المحاولة تلقائياً بعد فترات تزايدية: 2s -> 3s -> 4.5s -> 6.75s -> 10s (بحد أقصى 5 محاولات).
+- في حال تسجيل الخروج الصريح من الهاتف (`DisconnectReason.loggedOut` أو كود 401)، تُلغى الجلسة تلقائياً وتتحول الحالة إلى `disconnected` وتُحذف ملفات الجلسة المنتهية لتمكين المستخدم من مسح رمز جديد.
+
+---
+
+## 7. استراتيجية الأمان (Security Strategy & Firestore Rules)
 
 - تم إعداد ملف `firestore.rules` لحماية البيانات عند مستوى قاعدة البيانات مباشرة.
 - الدوال المساعدة:
@@ -218,17 +249,18 @@ CRM/
   - `isAdmin()`, `isManager()`, `isEmployee()`: التحقق الصارم من الرتبة.
 - منع التعديل على الحقول الحساسة مثل `role` و `permissions` إلا بواسطة Admin حصراً.
 - عزل المحادثات بحيث لا يملك الموظف العادي صلاحية قراءة أو تعديل محادثات لم تُعين له.
+- تخصيص `whatsappAccounts` بحيث يُسمح للموظف بالقراءة فقط، وتقتصر الإضافة والتعديل والحذف على الـ Admin.
 
 ---
 
-## 7. خارطة المراحل المستقبلية (Roadmap)
+## 8. خارطة المراحل المستقبلية (Roadmap)
 
-1. **المرحلة 2 (Channels & Webhooks Integration)**:
-   - ربط WhatsApp Cloud API عبر Firebase Cloud Functions.
-   - استقبال الـ Inbound Webhooks وتخزينها الفوري في Firestore.
-   - إرسال الرسائل عبر Meta Graph API.
-2. **المرحلة 3 (Automation & Auto-Assignment)**:
-   - محرك التوزيع التلقائي (Round-Robin & Least Active).
-   - الردود الجاهزة السريعة (Canned Responses).
-3. **المرحلة 4 (AI Agent & Smart Assistance)**:
-   - تلخيص المحادثات، اقتراح الردود الذكية، وروبوت المحادثة المبدئي.
+1. **المرحلة الحالية (Phase 3 - Experimental WhatsApp Web Gateway)**:
+   - تشغيل البوابة التجريبية المستقلة وإدارة أرقام واتساب برمز الاستجابة السريعة (QR Code).
+   - اختبار المحادثات الواردة والصادرة عبر الـ Unified Inbox.
+2. **المرحلة القادمة (Phase 4 - Official Meta Cloud API Integration)**:
+   - دعم التبديل السلس إلى `WhatsAppCloudProvider` و `MessengerProvider`.
+   - إدارة قوالب Meta المعتمدة (Approved Templates) و الـ Webhooks عبر Firebase Cloud Functions.
+3. **المرحلة 5 (AI Agent & Smart Automation)**:
+   - التوزيع الذكي، الردود التلقائية، وتلخيص المحادثات بالذكاء الاصطناعي.
+

@@ -1,20 +1,21 @@
 import type { ChannelType, ChannelAccount, ChannelMessagePayload, ChannelDeliveryResult } from '../../types/channel.types';
 import type { IChannelProvider } from './ChannelProvider.interface';
-import { WhatsAppProvider } from './providers/WhatsAppProvider';
+import { WhatsAppWebProvider } from './providers/WhatsAppWebProvider';
+import { WhatsAppCloudProvider } from './providers/WhatsAppCloudProvider';
 import { MessengerProvider } from './providers/MessengerProvider';
 import { InstagramProvider } from './providers/InstagramProvider';
 import { WebsiteChatProvider } from './providers/WebsiteChatProvider';
 
 /**
- * Central Channel Manager.
- * Decouples CRM business logic from third-party APIs using the Strategy Pattern.
+ * Central Channel Manager with Strategy Pattern.
+ * Supports swappable WhatsApp providers (Web vs Cloud) without modifying Core CRM.
  */
 export class ChannelManager {
   private static instance: ChannelManager;
   private providers: Map<ChannelType, IChannelProvider> = new Map();
 
   private constructor() {
-    this.registerProvider(new WhatsAppProvider());
+    this.configureWhatsAppProvider();
     this.registerProvider(new MessengerProvider());
     this.registerProvider(new InstagramProvider());
     this.registerProvider(new WebsiteChatProvider());
@@ -25,6 +26,19 @@ export class ChannelManager {
       ChannelManager.instance = new ChannelManager();
     }
     return ChannelManager.instance;
+  }
+
+  /**
+   * Configures the WhatsApp provider based on environment flag
+   * Defaults to 'web' (WhatsAppWebProvider) for Phase 3 testing
+   */
+  public configureWhatsAppProvider(type?: 'web' | 'cloud'): void {
+    const providerType = type || (import.meta.env.VITE_WHATSAPP_PROVIDER as 'web' | 'cloud') || 'web';
+    if (providerType === 'cloud') {
+      this.registerProvider(new WhatsAppCloudProvider());
+    } else {
+      this.registerProvider(new WhatsAppWebProvider());
+    }
   }
 
   public registerProvider(provider: IChannelProvider): void {

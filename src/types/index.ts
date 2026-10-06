@@ -7,3 +7,4 @@ export * from './employee.types';
 export * from './pipeline.types';
 export * from './report.types';
 export * from './settings.types';
+export * from './whatsapp.types';

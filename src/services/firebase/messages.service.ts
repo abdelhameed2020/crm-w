@@ -45,11 +45,17 @@ export class MessagesService {
   }
 
   /**
-   * Update message delivery status
+   * Update message delivery status and optional external ID
    */
-  static async updateMessageStatus(messageId: string, status: MessageStatus): Promise<void> {
-    await FirestoreService.update<Message>(COLLECTIONS.MESSAGES, messageId, {
-      status,
-    });
+  static async updateMessageStatus(
+    messageId: string,
+    status: MessageStatus,
+    externalMessageId?: string
+  ): Promise<void> {
+    const updatePayload: Partial<Message> = { status };
+    if (externalMessageId) {
+      updatePayload.externalMessageId = externalMessageId;
+    }
+    await FirestoreService.update<Message>(COLLECTIONS.MESSAGES, messageId, updatePayload);
   }
 }

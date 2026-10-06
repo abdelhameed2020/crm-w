@@ -25,6 +25,7 @@ import type { Customer } from '../../types/customer.types';
 import { ConversationsService } from '../../services/firebase/conversations.service';
 import { MessagesService } from '../../services/firebase/messages.service';
 import { CustomersService } from '../../services/firebase/customers.service';
+import { channelManager } from '../../services/channels/ChannelManager';
 import { useAuth } from '../../hooks/useAuth';
 
 export const InboxPage: React.FC = () => {
@@ -114,6 +115,7 @@ export const InboxPage: React.FC = () => {
     e.preventDefault();
     if (!messageInput.trim() || !selectedConversation) return;
 
+    const contentText = messageInput.trim();
     const newMessage: Message = {
       id: `msg_${Date.now()}`,
       conversationId: selectedConversation.id,
@@ -122,7 +124,7 @@ export const InboxPage: React.FC = () => {
       senderType: 'employee',
       senderId: user?.id || 'emp_1',
       senderName: user?.displayName || 'الموظف',
-      content: messageInput.trim(),
+      content: contentText,
       messageType: 'text',
       status: 'sending',
       timestamp: Date.now(),
@@ -131,10 +133,45 @@ export const InboxPage: React.FC = () => {
     setMessageInput('');
     try {
       await MessagesService.createMessage(newMessage);
-      // Status update simulation in foundation
-      setTimeout(() => {
-        MessagesService.updateMessageStatus(newMessage.id, 'sent');
-      }, 500);
+
+      if (selectedConversation.channel === 'whatsapp') {
+        const recipientPhone = selectedConversation.customerPhone || activeCustomer?.phone || '';
+        const accountId = selectedConversation.channelAccountId || 'default';
+
+        try {
+          const delivery = await channelManager.sendMessage(
+            {
+              id: accountId,
+              type: 'whatsapp',
+              name: 'WhatsApp Account',
+              identifier: recipientPhone,
+              status: 'connected',
+              isActive: true,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            },
+            {
+              recipientId: recipientPhone,
+              content: contentText,
+            }
+          );
+
+          if (delivery.success) {
+            await MessagesService.updateMessageStatus(newMessage.id, 'sent', delivery.externalMessageId);
+          } else {
+            console.warn('WhatsApp Gateway delivery failed:', delivery.error);
+            await MessagesService.updateMessageStatus(newMessage.id, 'failed');
+          }
+        } catch (gwErr) {
+          console.error('Failed to dispatch via WhatsApp gateway:', gwErr);
+          await MessagesService.updateMessageStatus(newMessage.id, 'failed');
+        }
+      } else {
+        // Fallback for demo channels in Phase 3
+        setTimeout(() => {
+          MessagesService.updateMessageStatus(newMessage.id, 'sent');
+        }, 500);
+      }
     } catch (err) {
       console.error('Failed to send message:', err);
     }

@@ -203,5 +203,13 @@ service cloud.firestore {
       allow read: if isEmployee();
       allow write: if isAdmin();
     }
+
+    // ==========================================
+    // WhatsApp Accounts (Multi-device Web & Cloud Lines)
+    // ==========================================
+    match /whatsappAccounts/{accountId} {
+      allow read: if isEmployee();
+      allow write: if isAdmin();
+    }
   }
 }

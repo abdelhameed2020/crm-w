@@ -34,3 +34,12 @@ dist-ssr
 firebase-debug.log*
 firestore-debug.log*
 ui-debug.log*
+serviceAccountKey.json
+
+# WhatsApp Gateway (Phase 3 Web Gateway)
+gateway/node_modules/
+gateway/dist/
+gateway/sessions/
+gateway/uploads/
+*.session
+*.creds.json

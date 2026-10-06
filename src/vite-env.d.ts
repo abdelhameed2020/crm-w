@@ -10,6 +10,9 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_MEASUREMENT_ID?: string;
   readonly VITE_APP_NAME?: string;
   readonly VITE_APP_DEFAULT_LANG?: string;
+  readonly VITE_WHATSAPP_PROVIDER?: 'web' | 'cloud';
+  readonly VITE_GATEWAY_URL?: string;
+  readonly VITE_GATEWAY_API_KEY?: string;
 }
 
 interface ImportMeta {
