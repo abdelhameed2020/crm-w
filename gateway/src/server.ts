@@ -22,6 +22,17 @@ export function createServer(): express.Express {
   // Static files for media uploads/downloads
   app.use('/uploads', express.static(CONFIG.UPLOADS_DIR));
 
+  // Root index endpoint (public)
+  app.get('/', (_req: Request, res: Response) => {
+    res.json({
+      service: 'OmniCRM WhatsApp Web Gateway',
+      version: '1.0.0',
+      status: 'running',
+      healthUrl: '/health',
+      activeSessions: SessionManager.getAllSessions().filter((s) => s.status === 'connected').length,
+    });
+  });
+
   // Health check endpoint (public)
   app.get('/health', (_req: Request, res: Response) => {
     const sessions = SessionManager.getAllSessions();
