@@ -20,47 +20,65 @@ export class AuthService {
       return () => {};
     }
 
-    return onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
-        callback(null, null);
-        return;
-      }
-
-      try {
-        const profile = await AuthService.getUserProfile(firebaseUser.uid);
-        if (profile) {
-          callback(profile, firebaseUser);
-        } else {
-          // If profile doc doesn't exist yet, create a default base profile
-          const defaultProfile: UserProfile = {
-            id: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'مستخدم',
-            role: 'employee', // Default safe least-privilege role
-            isActive: true,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          await AuthService.createUserProfile(defaultProfile);
-          callback(defaultProfile, firebaseUser);
+    return onAuthStateChanged(
+      auth,
+      async (firebaseUser) => {
+        if (!firebaseUser) {
+          callback(null, null);
+          return;
         }
-      } catch (error) {
-        console.error('Error fetching user profile:', error);
-        callback(null, firebaseUser);
+
+        try {
+          const profile = await AuthService.getUserProfile(firebaseUser.uid);
+          if (profile) {
+            callback(profile, firebaseUser);
+          } else {
+            // If profile doc doesn't exist yet, create a default base profile
+            const defaultProfile: UserProfile = {
+              id: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'مستخدم',
+              role: 'employee', // Default safe least-privilege role
+              isActive: true,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+            await AuthService.createUserProfile(defaultProfile).catch((err) => {
+              console.warn('Could not auto-create user profile in Firestore:', err);
+            });
+            callback(defaultProfile, firebaseUser);
+          }
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
+          callback(null, firebaseUser);
+        }
+      },
+      (error) => {
+        console.error('Firebase onAuthStateChanged error:', error);
+        callback(null, null);
       }
-    });
+    );
   }
 
   /**
-   * Fetch user profile document from Firestore
+   * Fetch user profile document from Firestore with safety timeout
    */
   static async getUserProfile(userId: string): Promise<UserProfile | null> {
-    const userDocRef = doc(db, COLLECTIONS.USERS, userId);
-    const snap = await getDoc(userDocRef);
-    if (!snap.exists()) {
+    try {
+      const userDocRef = doc(db, COLLECTIONS.USERS, userId);
+      const fetchPromise = getDoc(userDocRef);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Firestore getDoc timeout')), 4000)
+      );
+      const snap = await Promise.race([fetchPromise, timeoutPromise]);
+      if (!snap.exists()) {
+        return null;
+      }
+      return snap.data() as UserProfile;
+    } catch (err) {
+      console.warn('Could not fetch user profile from Firestore:', err);
       return null;
     }
-    return snap.data() as UserProfile;
   }
 
   /**

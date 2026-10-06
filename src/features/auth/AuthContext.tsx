@@ -48,14 +48,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    // Safety timeout to prevent indefinite frozen spinner
+    const timer = setTimeout(() => {
+      setLoading((prev) => {
+        if (prev) {
+          console.warn('[Auth] Auth state check reached fallback timeout, ending loading spinner.');
+          return false;
+        }
+        return false;
+      });
+    }, 2500);
+
     // Subscribe to real server-side Firebase Authentication
     const unsubscribe = AuthService.subscribeToAuthState((userProfile, fbUser) => {
+      clearTimeout(timer);
       setUser(userProfile);
       setFirebaseUser(fbUser);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
