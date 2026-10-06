@@ -3,28 +3,38 @@ import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
 
-// Configuration loaded from Vite environment variables
+// Configuration loaded strictly from Vite environment variables (.env)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'demo-api-key',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'demo-project.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'demo-project',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'demo-project.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1234567890',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1234567890:web:abcdef',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 };
 
 export const isFirebaseConfigured = Boolean(
-  import.meta.env.VITE_FIREBASE_API_KEY &&
-  import.meta.env.VITE_FIREBASE_API_KEY !== 'your_firebase_api_key_here' &&
-  import.meta.env.VITE_FIREBASE_PROJECT_ID &&
-  import.meta.env.VITE_FIREBASE_PROJECT_ID !== 'your-project-id'
+  firebaseConfig.apiKey &&
+  firebaseConfig.apiKey !== 'your_firebase_api_key_here' &&
+  firebaseConfig.projectId &&
+  firebaseConfig.projectId !== 'your-project-id'
 );
 
-// Singleton initialization
+// Initialize Firebase app as a singleton
 let app: FirebaseApp;
 if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
+  // If not configured, initialize with safe dummy object only to prevent crashes before env is supplied
+  app = initializeApp(
+    isFirebaseConfigured
+      ? firebaseConfig
+      : {
+          apiKey: 'unconfigured-api-key',
+          projectId: 'unconfigured-project',
+          authDomain: 'unconfigured.firebaseapp.com',
+          appId: '1:0000000000:web:00000000',
+        }
+  );
 } else {
   app = getApps()[0];
 }
@@ -32,16 +42,18 @@ if (!getApps().length) {
 export const auth: Auth = getAuth(app);
 export const db: Firestore = getFirestore(app);
 
-// Initialize Analytics conditionally if supported in environment
+// Initialize Analytics conditionally if supported in browser environment
 let analytics: Analytics | null = null;
-if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
-  isSupported().then((supported) => {
-    if (supported) {
-      analytics = getAnalytics(app);
-    }
-  }).catch((err) => {
-    console.warn('Analytics not initialized:', err);
-  });
+if (typeof window !== 'undefined' && isFirebaseConfigured && firebaseConfig.measurementId) {
+  isSupported()
+    .then((supported) => {
+      if (supported) {
+        analytics = getAnalytics(app);
+      }
+    })
+    .catch((err) => {
+      console.warn('Firebase Analytics not supported in this environment:', err);
+    });
 }
 
 export { analytics };

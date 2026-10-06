@@ -28,15 +28,20 @@ import { CustomersService } from '../../services/firebase/customers.service';
 import { useAuth } from '../../hooks/useAuth';
 
 export const InboxPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isManager } = useAuth();
 
   // State
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(true);
+  const [conversationsError, setConversationsError] = useState<string | null>(null);
 
   // Filters
+  const [assignmentScope, setAssignmentScope] = useState<'my' | 'unassigned' | 'all'>(
+    user?.role === 'employee' ? 'my' : 'all'
+  );
   const [selectedChannel, setSelectedChannel] = useState<ChannelType | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<ConversationStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,24 +52,35 @@ export const InboxPage: React.FC = () => {
 
   // Real-time conversations subscription
   useEffect(() => {
+    setIsLoadingConversations(true);
+    setConversationsError(null);
+
     const filter = {
       ...(selectedChannel !== 'all' ? { channel: selectedChannel } : {}),
       ...(selectedStatus !== 'all' ? { status: selectedStatus } : {}),
+      ...(assignmentScope === 'my' && user ? { assignedEmployeeId: user.id } : {}),
+      ...(assignmentScope === 'unassigned' ? { unassignedOnly: true } : {}),
     };
 
     const unsubscribe = ConversationsService.subscribeToConversations(
       filter,
       (data) => {
         setConversations(data);
+        setIsLoadingConversations(false);
       },
-      (err) => console.error('Conversations error:', err)
+      (err) => {
+        console.error('Conversations error:', err);
+        setConversationsError('تعذر تحميل المحادثات. يرجى التحقق من الصلاحيات والاتصال.');
+        setIsLoadingConversations(false);
+      }
     );
 
     return () => unsubscribe();
-  }, [selectedChannel, selectedStatus]);
+  }, [selectedChannel, selectedStatus, assignmentScope, user]);
 
   // Real-time messages & customer details when conversation selected
   useEffect(() => {
+    let isCurrent = true;
     if (!selectedConversation) {
       setMessages([]);
       setActiveCustomer(null);
@@ -73,15 +89,24 @@ export const InboxPage: React.FC = () => {
 
     const unsubscribeMessages = MessagesService.subscribeToMessages(
       selectedConversation.id,
-      (data) => setMessages(data),
+      (data) => {
+        if (isCurrent) setMessages(data);
+      },
       (err) => console.error('Messages error:', err)
     );
 
-    CustomersService.getCustomer(selectedConversation.customerId).then((cust) => {
-      setActiveCustomer(cust);
-    });
+    CustomersService.getCustomer(selectedConversation.customerId)
+      .then((cust) => {
+        if (isCurrent) setActiveCustomer(cust);
+      })
+      .catch((err) => {
+        console.error('Customer fetch error:', err);
+      });
 
-    return () => unsubscribeMessages();
+    return () => {
+      isCurrent = false;
+      unsubscribeMessages();
+    };
   }, [selectedConversation]);
 
   // Outbound message send
@@ -122,30 +147,62 @@ export const InboxPage: React.FC = () => {
 
   return (
     <div className="h-[calc(100vh-7rem)] flex flex-col bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-      {/* Inbox Channels Filter Header */}
+      {/* Inbox Channels & Assignment Filter Header */}
       <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+        {/* Assignment Scope Tabs */}
+        <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl">
+          <button
+            onClick={() => setAssignmentScope('my')}
+            className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+              assignmentScope === 'my' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            محادثاتي
+          </button>
+          <button
+            onClick={() => setAssignmentScope('unassigned')}
+            className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+              assignmentScope === 'unassigned' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            غير معينة
+          </button>
+          {isManager && (
+            <button
+              onClick={() => setAssignmentScope('all')}
+              className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                assignmentScope === 'all' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              جميع المحادثات
+            </button>
+          )}
+        </div>
+
+        {/* Channel Filters */}
         <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-          <span className="font-bold text-slate-600 ml-2">القناة:</span>
+          <span className="font-bold text-slate-600 ml-1">القناة:</span>
           {(['all', 'whatsapp', 'messenger', 'instagram', 'website'] as const).map((ch) => (
             <button
               key={ch}
               onClick={() => setSelectedChannel(ch)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
                 selectedChannel === ch
                   ? 'bg-brand-600 text-white shadow-sm'
                   : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
               }`}
             >
-              {ch === 'all' ? 'جميع القنوات' : <ChannelIcon channel={ch} showLabel />}
+              {ch === 'all' ? 'الكل' : <ChannelIcon channel={ch} showLabel />}
             </button>
           ))}
         </div>
 
+        {/* Status Dropdown */}
         <div className="flex items-center gap-2">
           <select
             value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value as any)}
-            className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-brand-500 font-medium text-slate-700"
+            onChange={(e) => setSelectedStatus(e.target.value as ConversationStatus | 'all')}
+            className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:border-brand-500 font-medium text-slate-700"
           >
             <option value="all">جميع الحالات</option>
             <option value="open">مفتوحة</option>
@@ -154,6 +211,18 @@ export const InboxPage: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {conversationsError && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-red-700 text-xs flex items-center justify-between">
+          <span>{conversationsError}</span>
+          <button
+            onClick={() => setAssignmentScope(assignmentScope)}
+            className="underline font-bold text-red-800 hover:text-red-950"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
 
       {/* Main 3-Column Layout */}
       <div className="flex-1 flex overflow-hidden">
@@ -179,7 +248,12 @@ export const InboxPage: React.FC = () => {
 
           {/* Conversations Items */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-            {filteredConversations.length === 0 ? (
+            {isLoadingConversations ? (
+              <div className="p-8 text-center text-xs text-slate-400">
+                <div className="w-5 h-5 border-2 border-brand-500/30 border-t-brand-500 rounded-full animate-spin mx-auto mb-2" />
+                <span>جاري تحميل المحادثات...</span>
+              </div>
+            ) : filteredConversations.length === 0 ? (
               <div className="p-6">
                 <EmptyState
                   title="لا توجد محادثات نشطة"

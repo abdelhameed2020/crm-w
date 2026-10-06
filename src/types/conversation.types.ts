@@ -34,4 +34,6 @@ export interface Conversation {
   metadata?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
+  createdBy?: string;
+  updatedBy?: string;
 }

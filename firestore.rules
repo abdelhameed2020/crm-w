@@ -40,13 +40,27 @@ service cloud.firestore {
       );
     }
 
+    function canAccessConversation(convId) {
+      let conv = get(/databases/$(database)/documents/conversations/$(convId)).data;
+      return isManager() || (
+        isEmployee() && (
+          conv.assignedEmployeeId == null ||
+          conv.assignedEmployeeId == request.auth.uid
+        )
+      );
+    }
+
     // ==========================================
     // Users Collection
     // ==========================================
     match /users/{userId} {
       allow read: if isAuthenticated();
-      // Only Admin can change user roles; users can update their own non-role profile fields
-      allow create: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      // Self-creation is strictly restricted to 'employee' role; promotions to manager/admin require existing admin
+      allow create: if isAuthenticated() && (
+        (request.auth.uid == userId && request.resource.data.role == 'employee') ||
+        isAdmin()
+      );
+      // Users can update their profile but cannot escalate their role or modify permissions
       allow update: if isAdmin() || (
         isAuthenticated() &&
         request.auth.uid == userId &&
@@ -56,11 +70,13 @@ service cloud.firestore {
     }
 
     // ==========================================
-    // Employees Collection
+    // Employees Collection (Workload & Team Directory)
     // ==========================================
     match /employees/{employeeId} {
       allow read: if isAuthenticated();
-      allow write: if isManager();
+      // Only Admin can add or remove employees; Managers can update operational fields (active chats, online status)
+      allow create, delete: if isAdmin();
+      allow update: if isManager();
     }
 
     // ==========================================
@@ -68,7 +84,9 @@ service cloud.firestore {
     // ==========================================
     match /customers/{customerId} {
       allow read: if isEmployee();
-      allow write: if isEmployee();
+      allow create: if isEmployee();
+      allow update: if isEmployee();
+      allow delete: if isAdmin();
     }
 
     // ==========================================
@@ -84,23 +102,40 @@ service cloud.firestore {
         )
       );
 
-      // Admin/Manager can write any conversation.
-      // Employee can claim unassigned or update their assigned conversation.
-      allow write: if isManager() || (
+      // Create conversation: Staff starting outbound conversation or Backend Functions
+      allow create: if isEmployee();
+
+      // Write / Update rules:
+      // 1. Manager and Admin can update and reassign any conversation.
+      // 2. Employee can claim an unassigned conversation by assigning it to themselves.
+      // 3. Employee can update a conversation assigned to them, but cannot reassign it to another employee.
+      allow update: if isManager() || (
         isEmployee() && (
-          resource.data.assignedEmployeeId == null ||
-          resource.data.assignedEmployeeId == request.auth.uid ||
-          request.resource.data.assignedEmployeeId == request.auth.uid
+          // Case A: Claiming an unassigned conversation
+          (resource.data.assignedEmployeeId == null && request.resource.data.assignedEmployeeId == request.auth.uid) ||
+          // Case B: Updating their own assigned conversation (cannot steal or reassign to another agent)
+          (resource.data.assignedEmployeeId == request.auth.uid && (
+            request.resource.data.assignedEmployeeId == request.auth.uid ||
+            request.resource.data.assignedEmployeeId == null
+          ))
         )
       );
+
+      allow delete: if isAdmin();
     }
 
     // ==========================================
     // Messages Collection
     // ==========================================
     match /messages/{messageId} {
-      allow read: if isEmployee();
-      allow create: if isEmployee();
+      // Employees can only read messages belonging to conversations they have access to
+      allow read: if isManager() || (
+        isEmployee() && canAccessConversation(resource.data.conversationId)
+      );
+      // Employees can send messages only into conversations they are authorized to access
+      allow create: if isManager() || (
+        isEmployee() && canAccessConversation(request.resource.data.conversationId)
+      );
       allow update: if isManager();
       allow delete: if isAdmin();
     }
@@ -109,8 +144,14 @@ service cloud.firestore {
     // Channels & Integration Credentials
     // ==========================================
     match /channels/{channelId} {
+      // General channel metadata (name, type, status) is readable by staff
       allow read: if isEmployee();
       allow write: if isAdmin();
+    }
+
+    // Secret credentials (API tokens, webhooks secrets) are forbidden from client SDK access
+    match /channel_secrets/{channelId} {
+      allow read, write: if false; // Accessible only by Cloud Functions via Firebase Admin SDK
     }
 
     // ==========================================
@@ -129,18 +170,25 @@ service cloud.firestore {
 
     match /notes/{noteId} {
       allow read: if isEmployee();
-      allow create: if isEmployee();
+      allow create: if isEmployee() && request.resource.data.authorId == request.auth.uid;
       allow update, delete: if isManager() || (
         isEmployee() && resource.data.authorId == request.auth.uid
       );
     }
 
     // ==========================================
-    // Sales Pipelines & Stages
+    // Sales Pipelines & Deals (Commercial & Revenue Protection)
     // ==========================================
     match /pipelines/{dealId} {
-      allow read: if isEmployee();
-      allow write: if isEmployee();
+      // Admin/Manager can view all deals. Employee can only view deals assigned to them
+      allow read: if isManager() || (
+        isEmployee() && resource.data.assignedEmployeeId == request.auth.uid
+      );
+      allow create: if isEmployee();
+      allow update: if isManager() || (
+        isEmployee() && resource.data.assignedEmployeeId == request.auth.uid
+      );
+      allow delete: if isManager();
     }
 
     match /pipelineStages/{stageId} {

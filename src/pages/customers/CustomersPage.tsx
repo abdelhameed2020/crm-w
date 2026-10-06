@@ -9,13 +9,32 @@ import type { Customer } from '../../types/customer.types';
 export const CustomersPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = CustomersService.subscribeToCustomers((data) => {
-      setCustomers(data);
-    });
+    setIsLoading(true);
+    setError(null);
+    const unsubscribe = CustomersService.subscribeToCustomers(
+      (data) => {
+        setCustomers(data);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.error('Error fetching customers:', err);
+        setError('تعذر تحميل سجل العملاء من قاعدة البيانات.');
+        setIsLoading(false);
+      }
+    );
     return () => unsubscribe();
   }, []);
+
+  const filteredCustomers = customers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone && c.phone.includes(search)) ||
+      (c.email && c.email.toLowerCase().includes(search.toLowerCase()))
+  );
 
   return (
     <div className="space-y-6">
@@ -33,6 +52,12 @@ export const CustomersPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs">
+          {error}
+        </div>
+      )}
 
       {/* Filter / Search Bar */}
       <Card className="p-3">
@@ -56,13 +81,21 @@ export const CustomersPage: React.FC = () => {
       </Card>
 
       {/* Customers List or Empty State */}
-      {customers.length === 0 ? (
+      {isLoading ? (
+        <div className="p-8 text-center text-xs text-slate-400">
+          جاري تحميل بيانات العملاء...
+        </div>
+      ) : filteredCustomers.length === 0 ? (
         <EmptyState
           icon={<Users className="w-7 h-7" />}
-          title="لم يتم إضافة عملاء بعد"
-          description="عندما يبدأ أي عميل محادثة عبر واتساب أو ماسنجر أو الموقع، أو عند إضافة عميل يدويًا، سيتم تسجيله وتوثيق كل تفاعلاته هنا في Firestore."
-          actionLabel="إضافة أول عميل"
-          onAction={() => alert('جاهز للربط مع فورم إضافة العميل في المراحل القادمة')}
+          title={search ? 'لم يتم العثور على نتائج مطابقة' : 'لم يتم إضافة عملاء بعد'}
+          description={
+            search
+              ? 'جرّب البحث بكلمات أخرى أو مسح حقل البحث.'
+              : 'عندما يبدأ أي عميل محادثة عبر واتساب أو ماسنجر أو الموقع، أو عند إضافة عميل يدويًا، سيتم تسجيله وتوثيق كل تفاعلاته هنا في Firestore.'
+          }
+          actionLabel={search ? 'مسح البحث' : 'إضافة أول عميل'}
+          onAction={() => (search ? setSearch('') : alert('جاهز للربط مع فورم إضافة العميل'))}
         />
       ) : (
         <Card className="p-0 overflow-hidden">
@@ -78,7 +111,7 @@ export const CustomersPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {customers.map((c) => (
+                {filteredCustomers.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="p-3 font-bold">{c.name}</td>
                     <td className="p-3 text-slate-500">{c.phone || '-'}</td>

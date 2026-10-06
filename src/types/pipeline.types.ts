@@ -20,6 +20,8 @@ export interface Deal {
   expectedCloseDate?: number;
   createdAt: number;
   updatedAt: number;
+  createdBy?: string;
+  updatedBy?: string;
 }
 
 export interface SalesPipeline {

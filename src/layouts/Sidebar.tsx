@@ -20,17 +20,17 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const { user, logout, switchDemoRole } = useAuth();
+  const { user, logout, switchDemoRole, isAdmin, isManager } = useAuth();
 
   const navigationItems = [
-    { name: 'لوحة التحكم', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'صندوق المحادثات', href: '/inbox', icon: Inbox, badge: 'موحد' },
-    { name: 'العملاء والـ Leads', href: '/customers', icon: Users },
-    { name: 'مسار المبيعات', href: '/pipeline', icon: GitBranch },
-    { name: 'فريق العمل', href: '/employees', icon: UserCheck },
-    { name: 'التقارير والأداء', href: '/reports', icon: BarChart3 },
-    { name: 'الإعدادات والقنوات', href: '/settings', icon: Settings },
-  ];
+    { name: 'لوحة التحكم', href: '/dashboard', icon: LayoutDashboard, visible: true },
+    { name: 'صندوق المحادثات', href: '/inbox', icon: Inbox, badge: 'موحد', visible: true },
+    { name: 'العملاء والـ Leads', href: '/customers', icon: Users, visible: true },
+    { name: 'مسار المبيعات', href: '/pipeline', icon: GitBranch, visible: true },
+    { name: 'فريق العمل', href: '/employees', icon: UserCheck, visible: isAdmin || isManager },
+    { name: 'التقارير والأداء', href: '/reports', icon: BarChart3, visible: isAdmin || isManager },
+    { name: 'الإعدادات والقنوات', href: '/settings', icon: Settings, visible: isAdmin },
+  ].filter((item) => item.visible);
 
   return (
     <>
@@ -127,10 +127,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </button>
           </div>
 
-          {/* Quick Role Tester (Architecture Preview Helper) */}
+          {/* Quick Role Tester (strictly gated to offline dev mode only) */}
           {switchDemoRole && (
             <div className="pt-2 border-t border-slate-800/60">
-              <p className="text-[10px] text-slate-400 mb-1.5">اختبار الصلاحيات (معاينة):</p>
+              <p className="text-[10px] text-slate-400 mb-1.5">معاينة الواجهة المحلية (Dev Tool):</p>
               <div className="grid grid-cols-3 gap-1">
                 {(['admin', 'manager', 'employee'] as const).map((r) => (
                   <button

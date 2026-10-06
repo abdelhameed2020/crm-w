@@ -19,7 +19,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Fallback demo user for local development before live Firebase credentials are added
+// Fallback demo user strictly for local UI testing when Firebase is NOT configured
 const defaultDemoUser: UserProfile = {
   id: 'demo-admin-uid',
   email: 'admin@crm-system.local',
@@ -32,9 +32,12 @@ const defaultDemoUser: UserProfile = {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // If Firebase is configured, user MUST be resolved from Firebase Auth and Firestore, starting at null
   const [user, setUser] = useState<UserProfile | null>(() => {
-    // If Firebase isn't configured, start with demo admin user to allow full UI inspection
-    return !isFirebaseConfigured ? defaultDemoUser : null;
+    if (!isFirebaseConfigured && import.meta.env.DEV) {
+      return defaultDemoUser;
+    }
+    return null;
   });
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState<boolean>(isFirebaseConfigured);
@@ -45,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    // Subscribe to real server-side Firebase Authentication
     const unsubscribe = AuthService.subscribeToAuthState((userProfile, fbUser) => {
       setUser(userProfile);
       setFirebaseUser(fbUser);
@@ -58,7 +62,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       if (!isFirebaseConfigured) {
-        // Mock demo login
+        if (!import.meta.env.DEV) {
+          throw new Error('Authentication is unavailable: Firebase is not configured.');
+        }
         setUser({
           ...defaultDemoUser,
           email,
@@ -87,19 +93,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const switchDemoRole = (role: UserRole) => {
-    if (user) {
-      setUser({
-        ...user,
-        role,
-        displayName: role === 'admin' ? 'مدير النظام' : role === 'manager' ? 'مدير الفريق' : 'موظف خدمة العملاء',
-      });
-    }
-  };
+  // SECURITY ENFORCEMENT:
+  // Role switcher is STRICTLY DISABLED in production or whenever real Firebase is active.
+  // It cannot be used to spoof permissions against real Firestore documents or security rules.
+  const switchDemoRole =
+    !isFirebaseConfigured && import.meta.env.DEV
+      ? (role: UserRole) => {
+          if (user) {
+            setUser({
+              ...user,
+              role,
+              displayName:
+                role === 'admin'
+                  ? 'مدير النظام (معاينة)'
+                  : role === 'manager'
+                  ? 'مدير الفريق (معاينة)'
+                  : 'موظف خدمة العملاء (معاينة)',
+            });
+          }
+        }
+      : undefined;
 
   const isAdmin = user?.role === 'admin';
   const isManager = user?.role === 'manager' || user?.role === 'admin';
-  const isEmployee = user?.role === 'employee';
+  const isEmployee = user?.role === 'employee' || isManager;
 
   return (
     <AuthContext.Provider

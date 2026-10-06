@@ -64,5 +64,7 @@ export interface Customer {
   customFields?: Record<string, string | number | boolean>;
   createdAt: number;
   updatedAt: number;
+  createdBy?: string;
+  updatedBy?: string;
   lastContactedAt?: number;
 }

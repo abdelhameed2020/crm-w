@@ -29,18 +29,26 @@ export const DashboardPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
     const loadMetrics = async () => {
       try {
-        const data = await ReportsService.getDashboardMetrics();
-        setMetrics(data);
+        const data = await ReportsService.getDashboardMetrics(user);
+        if (isMounted) {
+          setMetrics(data);
+        }
       } catch (error) {
         console.error('Failed to load dashboard metrics:', error);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
     loadMetrics();
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const cards = [
     {

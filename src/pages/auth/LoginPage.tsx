@@ -5,13 +5,19 @@ import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/common/Button';
 
 export const LoginPage: React.FC = () => {
-  const { login, isFirebaseReady } = useAuth();
+  const { user, login, isFirebaseReady } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('admin@crm.local');
   const [password, setPassword] = useState('password123');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
