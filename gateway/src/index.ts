@@ -7,7 +7,7 @@ async function bootstrap() {
   try {
     const app = createServer();
 
-    const server = app.listen(CONFIG.PORT, () => {
+    const server = app.listen(CONFIG.PORT, '0.0.0.0', () => {
       logger.info(`=======================================================`);
       logger.info(`🚀 WhatsApp Web Gateway started on http://localhost:${CONFIG.PORT}`);
       logger.info(`🔒 Security: API Key authentication active`);
