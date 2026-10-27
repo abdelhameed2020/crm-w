@@ -14,6 +14,7 @@ import {
   X
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { InstallPwaButton } from '../components/pwa/InstallPwaButton';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -103,6 +104,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               </NavLink>
             );
           })}
+        </div>
+
+        {/* PWA Mobile App Install Section */}
+        <div className="px-3 pb-2">
+          <InstallPwaButton variant="sidebar" />
         </div>
 
         {/* User Profile & Role Switcher */}

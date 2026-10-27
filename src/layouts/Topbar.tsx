@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu, Search, Bell, Database, Radio } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAgentPresence } from '../hooks/useAgentPresence';
+import { InstallPwaButton } from '../components/pwa/InstallPwaButton';
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -35,6 +36,9 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
 
       {/* Left side: System status & Actions */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* PWA Mobile App Install Button */}
+        <InstallPwaButton variant="topbar" />
+
         {/* Firebase Environment Status Indicator */}
         <div
           title={isFirebaseReady ? 'متصل بقاعدة بيانات Firebase المباشرة' : 'وضع التطوير التجريبي المبدئي (بانتظار مفاتيح .env)'}

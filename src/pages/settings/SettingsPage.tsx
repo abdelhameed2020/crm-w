@@ -25,6 +25,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { Link } from 'react-router-dom';
 import { AutoAssignmentService, DEFAULT_ASSIGNMENT_SETTINGS } from '../../services/assignment/AutoAssignmentService';
 import type { AutoAssignmentSettings } from '../../types/settings.types';
+import { InstallPwaButton } from '../../components/pwa/InstallPwaButton';
 
 type SettingsTab = 'channels' | 'company' | 'roles' | 'notifications' | 'auto_assignment';
 
@@ -164,6 +165,9 @@ export const SettingsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* PWA App Install Banner */}
+      <InstallPwaButton variant="banner" />
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Navigation Tabs List */}

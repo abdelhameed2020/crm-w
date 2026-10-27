@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, ShieldCheck, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/common/Button';
+import { InstallPwaButton } from '../../components/pwa/InstallPwaButton';
 
 export const LoginPage: React.FC = () => {
   const { user, login, isFirebaseReady } = useAuth();
@@ -115,6 +116,9 @@ export const LoginPage: React.FC = () => {
           <p className="text-[11px] text-center text-slate-400">
             صلاحيات الحساب (مدير النظام / مدير فريق / موظف) يتم جلبها مباشرة من السجلات الآمنة في Firestore.
           </p>
+
+          {/* Quick PWA App Install for Mobile Devices */}
+          <InstallPwaButton variant="login" />
         </form>
       </div>
     </div>

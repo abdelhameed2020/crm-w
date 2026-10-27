@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e8ce4" />
+      <stop offset="60%" stop-color="#026fc7" />
+      <stop offset="100%" stop-color="#0358a1" />
+    </linearGradient>
+    <linearGradient id="shieldGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e0effe" />
+    </linearGradient>
+    <filter id="shadowMask" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#022a4d" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Full bleed background for maskable (Android will crop to circle, squircle, etc.) -->
+  <rect width="512" height="512" fill="url(#bgGradMask)" />
+
+  <!-- Safe Zone Graphic (Center: 256, 256; Scale: 0.8) -->
+  <g transform="translate(256, 240) scale(0.78) translate(-256, -240)">
+    <!-- Decorative Rings -->
+    <circle cx="256" cy="230" r="160" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.12" />
+    <circle cx="256" cy="230" r="195" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.08" />
+
+    <!-- Shield Container -->
+    <g filter="url(#shadowMask)">
+      <path d="M 256 80 
+               C 320 80 376 102 388 152 
+               C 392 232 358 322 256 376 
+               C 154 322 120 232 124 152 
+               C 136 102 192 80 256 80 Z" 
+            fill="url(#shieldGradMask)" />
+      
+      <path d="M 256 104 
+               C 306 104 350 122 360 162 
+               C 363 226 336 298 256 342 
+               C 176 298 149 226 152 162 
+               C 162 122 206 104 256 104 Z" 
+            fill="#026fc7" />
+
+      <path d="M 220 232 L 246 258 L 298 196" 
+            fill="none" 
+            stroke="#ffffff" 
+            stroke-width="22" 
+            stroke-linecap="round" 
+            stroke-linejoin="round" />
+
+      <circle cx="256" cy="158" r="12" fill="#7cc7fb" />
+    </g>
+
+    <!-- Brand Badge -->
+    <g>
+      <rect x="96" y="404" width="320" height="52" rx="26" fill="#082849" fill-opacity="0.9" />
+      <text x="256" y="438" 
+            font-family="'Cairo', system-ui, -apple-system, sans-serif" 
+            font-size="22" 
+            font-weight="800" 
+            fill="#ffffff" 
+            letter-spacing="1" 
+            text-anchor="middle">CRM أولاد يحيى</text>
+    </g>
+  </g>
+</svg>
