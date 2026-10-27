@@ -3,22 +3,37 @@ import { getAuth, type Auth } from 'firebase/auth';
 import { initializeFirestore, getFirestore, type Firestore } from 'firebase/firestore';
 import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
 
+// Helper to sanitize environment variables and ignore dummy placeholder values from .env.example
+const sanitizeEnv = (val: string | undefined, fallback: string): string => {
+  if (
+    !val ||
+    val.trim() === '' ||
+    val.includes('your_') ||
+    val.includes('your-') ||
+    val.includes('placeholder') ||
+    val.includes('unconfigured')
+  ) {
+    return fallback;
+  }
+  return val.trim();
+};
+
 // Configuration loaded strictly from Vite environment variables (.env) with safe fallback to crm-awlad-yahya
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyBlc26xWhgmxwMeFxFhQ7w0PCDw0L8zgkc',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'crm-awlad-yahya.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'crm-awlad-yahya',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'crm-awlad-yahya.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '18481963471',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:18481963471:web:90e47413eeddff58d3b2ba',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-CLKFZ51QLZ',
+  apiKey: sanitizeEnv(import.meta.env.VITE_FIREBASE_API_KEY, 'AIzaSyBlc26xWhgmxwMeFxFhQ7w0PCDw0L8zgkc'),
+  authDomain: sanitizeEnv(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN, 'crm-awlad-yahya.firebaseapp.com'),
+  projectId: sanitizeEnv(import.meta.env.VITE_FIREBASE_PROJECT_ID, 'crm-awlad-yahya'),
+  storageBucket: sanitizeEnv(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET, 'crm-awlad-yahya.firebasestorage.app'),
+  messagingSenderId: sanitizeEnv(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID, '18481963471'),
+  appId: sanitizeEnv(import.meta.env.VITE_FIREBASE_APP_ID, '1:18481963471:web:90e47413eeddff58d3b2ba'),
+  measurementId: sanitizeEnv(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID, 'G-CLKFZ51QLZ'),
 };
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey &&
-  firebaseConfig.apiKey !== 'your_firebase_api_key_here' &&
+  !firebaseConfig.apiKey.includes('your_') &&
   firebaseConfig.projectId &&
-  firebaseConfig.projectId !== 'your-project-id'
+  !firebaseConfig.projectId.includes('your_')
 );
 
 // Initialize Firebase app as a singleton
