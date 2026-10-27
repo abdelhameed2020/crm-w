@@ -26,15 +26,23 @@ dist-ssr
 
 # Environment files
 .env
-.env.production
-.env.local
+.env.*
+!.env.example
+gateway/.env
+gateway/.env.*
+!gateway/.env.example
+
+# Secrets & Keys
+*serviceAccountKey*.json
+*.pem
+*.key
+*.cert
 
 # Firebase
 .firebase/
 firebase-debug.log*
 firestore-debug.log*
 ui-debug.log*
-serviceAccountKey.json
 
 # WhatsApp Gateway (Phase 3 Web Gateway)
 gateway/node_modules/
@@ -43,3 +51,4 @@ gateway/sessions/
 gateway/uploads/
 *.session
 *.creds.json
+creds.json

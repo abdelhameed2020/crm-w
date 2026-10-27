@@ -13,6 +13,7 @@ import {
   Clock,
   Server,
   Loader2,
+  Globe,
 } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
@@ -25,7 +26,7 @@ import type { WhatsAppAccount, WhatsAppConnectionStatus } from '../../types/what
 import type { Employee } from '../../types/employee.types';
 
 export const WhatsAppAccountsPage: React.FC = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, firebaseUser } = useAuth();
 
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -45,6 +46,10 @@ export const WhatsAppAccountsPage: React.FC = () => {
 
   // Form State for Add Account
   const [newAccountName, setNewAccountName] = useState('');
+  const [newProvider, setNewProvider] = useState<'web' | 'cloud'>('web');
+  const [newPhone, setNewPhone] = useState('');
+  const [newPhoneNumberId, setNewPhoneNumberId] = useState('');
+  const [newWabaId, setNewWabaId] = useState('');
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
 
   // Polling ref
@@ -207,27 +212,51 @@ export const WhatsAppAccountsPage: React.FC = () => {
     if (!newAccountName.trim()) return;
 
     setIsActionLoading(true);
-    const newId = `wa_${Date.now()}`;
+
+    const isCloud = newProvider === 'cloud';
+    const newId = isCloud
+      ? (newPhoneNumberId.trim() ? `wa_cloud_${newPhoneNumberId.trim()}` : `wa_cloud_${Date.now()}`)
+      : `wa_${Date.now()}`;
+
     const newAccount: WhatsAppAccount = {
       id: newId,
       displayName: newAccountName.trim(),
-      status: 'disconnected',
-      provider: 'web',
+      status: isCloud ? 'connected' : 'disconnected',
+      provider: newProvider,
+      phoneNumber: newPhone.trim() || undefined,
+      phoneNumberId: newPhoneNumberId.trim() || undefined,
+      wabaId: newWabaId.trim() || undefined,
       assignedEmployees: selectedEmployees,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      ...(isCloud ? { lastConnectedAt: Date.now() } : {}),
     };
 
     try {
       await WhatsAppAccountsService.createAccount(newAccount);
       setNewAccountName('');
+      setNewPhone('');
+      setNewPhoneNumberId('');
+      setNewWabaId('');
       setSelectedEmployees([]);
       setIsAddModalOpen(false);
 
-      // Automatically launch QR scanning modal
-      handleOpenQrModal(newAccount);
+      if (isCloud) {
+        alert('تم إضافة وتفعيل حساب واتساب الرسمي (Meta Cloud API) بنجاح!');
+      } else {
+        // Automatically launch QR scanning modal for Baileys Web
+        handleOpenQrModal(newAccount);
+      }
     } catch (err: any) {
-      alert(`فشل إنشاء الحساب: ${err.message}`);
+      if (err.message?.includes('permissions') || err.code === 'permission-denied') {
+        alert(
+          `فشل إنشاء الحساب بسبب صلاحيات أمان Firestore (Missing permissions):\n\n` +
+          `• معرف حسابك الفعلي (Auth UID) هو:\n${firebaseUser?.uid || 'غير معروف'}\n\n` +
+          `يرجى التأكد من تحديث قواعد Rules في Firebase Console للسماح بالحفظ.`
+        );
+      } else {
+        alert(`فشل إنشاء الحساب: ${err.message}`);
+      }
     } finally {
       setIsActionLoading(false);
     }
@@ -343,6 +372,7 @@ export const WhatsAppAccountsPage: React.FC = () => {
               <thead className="bg-slate-50/75 border-b border-slate-100 text-slate-500 font-medium">
                 <tr>
                   <th className="py-3 px-4">اسم الحساب</th>
+                  <th className="py-3 px-4">نوع الحساب / المزود</th>
                   <th className="py-3 px-4">رقم الهاتف</th>
                   <th className="py-3 px-4">الحالة</th>
                   <th className="py-3 px-4">الموظفون المصرح لهم</th>
@@ -353,13 +383,27 @@ export const WhatsAppAccountsPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {accounts.map((acc) => {
                   const assignedCount = acc.assignedEmployees?.length || 0;
+                  const isCloud = acc.provider === 'cloud';
                   return (
                     <tr key={acc.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-4 px-4 font-semibold text-slate-900">
                         <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                          <div className={`w-2.5 h-2.5 rounded-full ${acc.status === 'connected' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
                           <span>{acc.displayName}</span>
                         </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        {isCloud ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <Globe className="w-3 h-3" />
+                            <span>رسمي (Meta Cloud API)</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            <Smartphone className="w-3 h-3" />
+                            <span>تجريبي (Baileys Web)</span>
+                          </span>
+                        )}
                       </td>
                       <td className="py-4 px-4 font-mono text-slate-700">
                         {acc.phoneNumber || <span className="text-slate-400 italic">بانتظار المسح</span>}
@@ -387,7 +431,11 @@ export const WhatsAppAccountsPage: React.FC = () => {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2">
-                          {acc.status !== 'connected' ? (
+                          {isCloud ? (
+                            <span className="text-xs text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 font-medium">
+                              نشط وسحابي
+                            </span>
+                          ) : acc.status !== 'connected' ? (
                             <Button
                               variant="primary"
                               size="sm"
@@ -410,16 +458,18 @@ export const WhatsAppAccountsPage: React.FC = () => {
                             </Button>
                           )}
 
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="إعادة الاتصال"
-                            className="text-slate-600 hover:text-slate-900"
-                            onClick={() => handleReconnect(acc)}
-                            disabled={isActionLoading}
-                          >
-                            <RefreshCw className="w-4 h-4" />
-                          </Button>
+                          {!isCloud && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="إعادة الاتصال"
+                              className="text-slate-600 hover:text-slate-900"
+                              onClick={() => handleReconnect(acc)}
+                              disabled={isActionLoading}
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </Button>
+                          )}
 
                           {isAdmin && (
                             <Button
@@ -451,7 +501,7 @@ export const WhatsAppAccountsPage: React.FC = () => {
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <Smartphone className="w-5 h-5 text-emerald-600" />
-                <span>إضافة خط واتساب جديد</span>
+                <span>إضافة حساب واتساب جديد</span>
               </h3>
               <button
                 onClick={() => setIsAddModalOpen(false)}
@@ -461,7 +511,47 @@ export const WhatsAppAccountsPage: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleCreateAccount} className="p-6 space-y-5">
+            <form onSubmit={handleCreateAccount} className="p-6 space-y-4">
+              {/* Provider Selection */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  نوع الحساب والمزود <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setNewProvider('web')}
+                    className={`p-3 rounded-xl border text-right transition-all ${
+                      newProvider === 'web'
+                        ? 'border-emerald-500 bg-emerald-50/50 text-emerald-950 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-emerald-600" />
+                      <span>تجريبي (Baileys)</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">ربط عبر مسح كود QR بالهاتف</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNewProvider('cloud')}
+                    className={`p-3 rounded-xl border text-right transition-all ${
+                      newProvider === 'cloud'
+                        ? 'border-indigo-500 bg-indigo-50/50 text-indigo-950 ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-indigo-600" />
+                      <span>رسمي (Meta Cloud API)</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">حساب تجاري عبر Meta Cloud API</p>
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   اسم الحساب أو الخط <span className="text-rose-500">*</span>
@@ -469,12 +559,57 @@ export const WhatsAppAccountsPage: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="مثال: خط المبيعات الرئيسي أو خدمة العملاء"
+                  placeholder={newProvider === 'cloud' ? 'مثال: حساب واتساب المبيعات الرسمي' : 'مثال: خط التجربة الداخلي'}
                   value={newAccountName}
                   onChange={(e) => setNewAccountName(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-sm"
                 />
               </div>
+
+              {newProvider === 'cloud' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                      رقم الهاتف التجاري المعتمد <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: +201012345678"
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Phone Number ID (Meta)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="اختياري إن حُدد بالخادم"
+                        value={newPhoneNumberId}
+                        onChange={(e) => setNewPhoneNumberId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        WABA ID (حساب الأعمال)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="اختياري"
+                        value={newWabaId}
+                        onChange={(e) => setNewWabaId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">
@@ -483,7 +618,7 @@ export const WhatsAppAccountsPage: React.FC = () => {
                 <p className="text-xs text-slate-500 mb-2">
                   اترك القائمة فارغة للسماح لجميع الموظفين بالرد والإرسال، أو حدد موظفين بعينهم:
                 </p>
-                <div className="max-h-48 overflow-y-auto border border-slate-100 rounded-xl p-3 space-y-2 bg-slate-50/50">
+                <div className="max-h-36 overflow-y-auto border border-slate-100 rounded-xl p-3 space-y-2 bg-slate-50/50">
                   {employees.map((emp) => (
                     <label key={emp.id} className="flex items-center gap-2.5 text-sm cursor-pointer">
                       <input
@@ -516,9 +651,9 @@ export const WhatsAppAccountsPage: React.FC = () => {
                   variant="primary"
                   type="submit"
                   disabled={isActionLoading}
-                  className="bg-emerald-600 hover:bg-emerald-700"
+                  className={newProvider === 'cloud' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}
                 >
-                  {isActionLoading ? 'جارٍ الإنشاء...' : 'إنشاء وبدء الربط'}
+                  {isActionLoading ? 'جارٍ الإنشاء...' : (newProvider === 'cloud' ? 'تفعيل الحساب الرسمي' : 'إنشاء وبدء الربط')}
                 </Button>
               </div>
             </form>

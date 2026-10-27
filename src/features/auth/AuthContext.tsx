@@ -31,16 +31,39 @@ const defaultDemoUser: UserProfile = {
   updatedAt: Date.now(),
 };
 
+const STORAGE_KEY = 'omni_crm_user_profile';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // If Firebase is configured, user MUST be resolved from Firebase Auth and Firestore, starting at null
+  // If user profile is already cached in localStorage, start with it immediately (0ms delay)
   const [user, setUser] = useState<UserProfile | null>(() => {
     if (!isFirebaseConfigured && import.meta.env.DEV) {
       return defaultDemoUser;
     }
+    try {
+      const cached = localStorage.getItem(STORAGE_KEY);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch {
+      // ignore
+    }
     return null;
   });
+
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [loading, setLoading] = useState<boolean>(isFirebaseConfigured);
+
+  // If user is already cached, loading is immediately false (zero spinner)
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (!isFirebaseConfigured) return false;
+    try {
+      if (localStorage.getItem(STORAGE_KEY)) {
+        return false;
+      }
+    } catch {
+      // ignore
+    }
+    return true;
+  });
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
@@ -57,11 +80,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return false;
       });
-    }, 2500);
+    }, 3000);
 
     // Subscribe to real server-side Firebase Authentication
     const unsubscribe = AuthService.subscribeToAuthState((userProfile, fbUser) => {
       clearTimeout(timer);
+      if (userProfile) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(userProfile));
+        } catch {}
+      } else {
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {}
+      }
       setUser(userProfile);
       setFirebaseUser(fbUser);
       setLoading(false);
@@ -98,6 +130,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     setLoading(true);
     try {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {}
       if (isFirebaseConfigured) {
         await AuthService.logout();
       }

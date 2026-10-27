@@ -1,17 +1,17 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, type Firestore } from 'firebase/firestore';
 import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
 
-// Configuration loaded strictly from Vite environment variables (.env)
+// Configuration loaded strictly from Vite environment variables (.env) with safe fallback to crm-awlad-yahya
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyBlc26xWhgmxwMeFxFhQ7w0PCDw0L8zgkc',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'crm-awlad-yahya.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'crm-awlad-yahya',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'crm-awlad-yahya.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '18481963471',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:18481963471:web:90e47413eeddff58d3b2ba',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-CLKFZ51QLZ',
 };
 
 export const isFirebaseConfigured = Boolean(
@@ -40,7 +40,16 @@ if (!getApps().length) {
 }
 
 export const auth: Auth = getAuth(app);
-export const db: Firestore = getFirestore(app);
+
+let firestoreDb: Firestore;
+try {
+  firestoreDb = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+  });
+} catch {
+  firestoreDb = getFirestore(app);
+}
+export const db: Firestore = firestoreDb;
 
 // Initialize Analytics conditionally if supported in browser environment
 let analytics: Analytics | null = null;
@@ -56,5 +65,5 @@ if (typeof window !== 'undefined' && isFirebaseConfigured && firebaseConfig.meas
     });
 }
 
-export { analytics };
+export { analytics, firebaseConfig };
 export default app;

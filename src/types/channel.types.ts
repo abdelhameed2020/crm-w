@@ -22,6 +22,9 @@ export interface ChannelMessagePayload {
   content: string;
   mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'audio' | 'document';
+  mediaBase64?: string;
+  fileName?: string;
+  mimeType?: string;
   templateId?: string;
   templateParams?: Record<string, string>;
   metadata?: Record<string, unknown>;
@@ -30,6 +33,7 @@ export interface ChannelMessagePayload {
 export interface ChannelDeliveryResult {
   success: boolean;
   externalMessageId?: string;
+  mediaUrl?: string;
   error?: string;
   deliveredAt?: number;
 }

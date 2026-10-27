@@ -50,11 +50,15 @@ export class WhatsAppWebProvider implements IChannelProvider {
         content: payload.content,
         mediaUrl: payload.mediaUrl,
         mediaType: payload.mediaType,
+        mediaBase64: payload.mediaBase64,
+        fileName: payload.fileName,
+        mimeType: payload.mimeType,
       });
 
       return {
         success: result.success,
         externalMessageId: result.externalMessageId,
+        mediaUrl: result.mediaUrl,
         deliveredAt: result.deliveredAt || Date.now(),
         error: result.error,
       };

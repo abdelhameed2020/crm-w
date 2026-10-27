@@ -4,6 +4,7 @@ import admin from 'firebase-admin';
 import { CONFIG } from './config.js';
 import { logger } from './logger.js';
 import type { SavedMediaInfo } from './media.service.js';
+import { SyncQueueService } from './sync-queue.service.js';
 
 let isInitialized = false;
 let db: admin.firestore.Firestore | null = null;
@@ -89,6 +90,7 @@ export interface InboundMessagePayload {
   content: string;
   messageType: 'text' | 'image' | 'video' | 'audio' | 'document';
   media?: SavedMediaInfo | null;
+  quoted?: { text: string; sender?: string };
   timestamp: number;
 }
 
@@ -142,9 +144,10 @@ export class CrmSyncService {
   static async syncInboundMessage(payload: InboundMessagePayload): Promise<void> {
     const firestore = initFirebaseAdmin();
     if (!firestore) {
-      logger.warn('Skipping Firestore message sync (No Firestore connection configured)', {
+      logger.warn('Skipping Firestore message sync (No Firestore connection configured), buffering for client sync', {
         sender: payload.senderPhone,
       });
+      SyncQueueService.addPendingMessage(payload);
       return;
     }
 
@@ -199,19 +202,35 @@ export class CrmSyncService {
         });
       }
 
-      // 2. Find or create open Conversation
+      // 2. Find or create open Conversation scoped strictly to the WhatsApp Account
       let conversationId: string;
       const convQuery = await conversationsRef
         .where('customerId', '==', customerId)
         .where('channel', '==', 'whatsapp')
         .where('status', 'in', ['open', 'pending'])
-        .limit(1)
         .get();
+
+      const convDoc = convQuery.docs.find((doc) => {
+        const d = doc.data();
+        return d.channelAccountId === payload.accountId || (!d.channelAccountId && payload.accountId === 'default');
+      });
 
       const lastSnippet = payload.content || (payload.messageType === 'image' ? '[صورة]' : `[ملف ${payload.messageType}]`);
 
-      if (!convQuery.empty) {
-        const convDoc = convQuery.docs[0];
+      // 3. Message idempotency check
+      const msgDocId = payload.externalMessageId
+        ? (payload.externalMessageId.startsWith('msg_') ? payload.externalMessageId : `msg_${payload.externalMessageId}`)
+        : messagesRef.doc().id;
+
+      const existingMsgSnap = await messagesRef.doc(msgDocId).get();
+      if (existingMsgSnap.exists) {
+        logger.info('Inbound message already exists in Firestore (skipping duplicate webhook retry)', {
+          externalMessageId: payload.externalMessageId,
+        });
+        return;
+      }
+
+      if (convDoc) {
         conversationId = convDoc.id;
         await convDoc.ref.update({
           lastMessageSnippet: lastSnippet,
@@ -243,11 +262,12 @@ export class CrmSyncService {
         logger.info('Auto-created new Conversation for incoming WhatsApp message', {
           conversationId,
           customerId,
+          channelAccountId: payload.accountId,
         });
       }
 
-      // 3. Create Message document
-      const newMessageRef = messagesRef.doc();
+      // 4. Create Message document
+      const newMessageRef = messagesRef.doc(msgDocId);
       const messageDoc: Record<string, any> = {
         id: newMessageRef.id,
         conversationId,
@@ -283,10 +303,11 @@ export class CrmSyncService {
         customerId,
       });
     } catch (err: any) {
-      logger.error('Failed to sync inbound message to Firestore', {
+      logger.error('Failed to sync inbound message to Firestore, buffering for client sync', {
         error: err?.message,
         sender: payload.senderPhone,
       });
+      SyncQueueService.addPendingMessage(payload);
     }
   }
 }

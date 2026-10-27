@@ -12,10 +12,15 @@ import { WebsiteChatProvider } from './providers/WebsiteChatProvider';
  */
 export class ChannelManager {
   private static instance: ChannelManager;
+  private webProvider: WhatsAppWebProvider;
+  private cloudProvider: WhatsAppCloudProvider;
   private providers: Map<ChannelType, IChannelProvider> = new Map();
 
   private constructor() {
-    this.configureWhatsAppProvider();
+    this.webProvider = new WhatsAppWebProvider();
+    this.cloudProvider = new WhatsAppCloudProvider();
+
+    this.registerProvider(this.webProvider);
     this.registerProvider(new MessengerProvider());
     this.registerProvider(new InstagramProvider());
     this.registerProvider(new WebsiteChatProvider());
@@ -29,16 +34,10 @@ export class ChannelManager {
   }
 
   /**
-   * Configures the WhatsApp provider based on environment flag
-   * Defaults to 'web' (WhatsAppWebProvider) for Phase 3 testing
+   * Retrieves specific WhatsApp provider: 'web' (Baileys) or 'cloud' (Meta Cloud API)
    */
-  public configureWhatsAppProvider(type?: 'web' | 'cloud'): void {
-    const providerType = type || (import.meta.env.VITE_WHATSAPP_PROVIDER as 'web' | 'cloud') || 'web';
-    if (providerType === 'cloud') {
-      this.registerProvider(new WhatsAppCloudProvider());
-    } else {
-      this.registerProvider(new WhatsAppWebProvider());
-    }
+  public getWhatsAppProvider(providerType?: 'web' | 'cloud'): IChannelProvider {
+    return providerType === 'cloud' ? this.cloudProvider : this.webProvider;
   }
 
   public registerProvider(provider: IChannelProvider): void {
@@ -57,11 +56,21 @@ export class ChannelManager {
     account: ChannelAccount,
     payload: ChannelMessagePayload
   ): Promise<ChannelDeliveryResult> {
+    if (account.type === 'whatsapp') {
+      const providerType = (account.metadata?.provider as string) || (account as any).provider || 'web';
+      const provider = this.getWhatsAppProvider(providerType === 'cloud' ? 'cloud' : 'web');
+      return provider.sendMessage(account, payload);
+    }
     const provider = this.getProvider(account.type);
     return provider.sendMessage(account, payload);
   }
 
   public async checkHealth(account: ChannelAccount): Promise<{ isHealthy: boolean; details?: string }> {
+    if (account.type === 'whatsapp') {
+      const providerType = (account.metadata?.provider as string) || (account as any).provider || 'web';
+      const provider = this.getWhatsAppProvider(providerType === 'cloud' ? 'cloud' : 'web');
+      return provider.checkHealth(account);
+    }
     const provider = this.getProvider(account.type);
     return provider.checkHealth(account);
   }

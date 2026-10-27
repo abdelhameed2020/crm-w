@@ -1,3 +1,13 @@
+export interface AutoAssignmentSettings {
+  enabled: boolean;
+  method: 'round_robin' | 'least_active';
+  firstResponseTimeoutMinutes: number; // default 2
+  maxUnrespondedChatsPerAgent: number; // default 3
+  stickyAgentEnabled: boolean; // default true
+  heartbeatTimeoutSeconds: number; // default 90
+  allowManagerAutoAssign: boolean; // default false
+}
+
 export interface OrganizationSettings {
   id: string;
   name: string;
@@ -9,10 +19,7 @@ export interface OrganizationSettings {
     end: string;
     workDays: number[]; // 0 = Sunday, 1 = Monday, etc.
   };
-  autoAssignment: {
-    enabled: boolean;
-    method: 'round_robin' | 'least_active';
-  };
+  autoAssignment: AutoAssignmentSettings;
 }
 
 export interface SystemNotificationSettings {

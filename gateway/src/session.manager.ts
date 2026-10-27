@@ -273,6 +273,83 @@ export class SessionManager {
   }
 
   /**
+   * Resolve real phone number from JID or LID
+   */
+  static async resolvePhoneNumber(
+    accountId: string,
+    jid: string,
+    participant?: string | null
+  ): Promise<string> {
+    const session = this.sessions.get(accountId);
+
+    // 1. If standard phone number JID (...@s.whatsapp.net), user digits ARE phone number
+    if (jid.endsWith('@s.whatsapp.net')) {
+      const raw = jid.replace('@s.whatsapp.net', '').replace(/[^\d]/g, '');
+      return `+${raw}`;
+    }
+
+    // 2. If LID or long identity string
+    const lid = jid.replace(/@.+/, '').replace(/[^\d]/g, '');
+    if (jid.includes('@lid') || lid.length > 13) {
+      // A. Check Baileys internal signalRepository LID mapping
+      try {
+        if ((session?.socket as any)?.signalRepository?.lidMapping?.getPNForLID) {
+          const pn = await (session!.socket as any).signalRepository.lidMapping.getPNForLID(lid);
+          if (pn) {
+            const clean = String(pn).replace(/[^\d]/g, '');
+            logger.info('Resolved phone number via Baileys lidMapping store', { lid, pn: clean });
+            return `+${clean}`;
+          }
+        }
+      } catch (e) {
+        // continue
+      }
+
+      // B. Check session folder for reverse mapping file (lid-mapping-{lid}_reverse.json)
+      try {
+        const revPath = path.join(CONFIG.SESSIONS_DIR, accountId, `lid-mapping-${lid}_reverse.json`);
+        if (fs.existsSync(revPath)) {
+          const raw = fs.readFileSync(revPath, 'utf8');
+          const clean = JSON.parse(raw).replace(/[^\d]/g, '');
+          if (clean) {
+            logger.info('Resolved phone number from reverse mapping file', { lid, pn: clean });
+            return `+${clean}`;
+          }
+        }
+      } catch (e) {
+        // continue
+      }
+
+      // C. Check participant if participant has @s.whatsapp.net
+      if (participant && participant.endsWith('@s.whatsapp.net')) {
+        const raw = participant.replace('@s.whatsapp.net', '').replace(/[^\d]/g, '');
+        if (raw) return `+${raw}`;
+      }
+
+      // D. Try scanning all lid-mapping files in session directory
+      try {
+        const sessionDir = path.join(CONFIG.SESSIONS_DIR, accountId);
+        if (fs.existsSync(sessionDir)) {
+          const files = fs.readdirSync(sessionDir);
+          const matched = files.find((f) => f.startsWith('lid-mapping-') && f.includes(lid) && f.endsWith('_reverse.json'));
+          if (matched) {
+            const raw = fs.readFileSync(path.join(sessionDir, matched), 'utf8');
+            const clean = JSON.parse(raw).replace(/[^\d]/g, '');
+            if (clean) return `+${clean}`;
+          }
+        }
+      } catch (e) {
+        // continue
+      }
+
+      return `+${lid}`;
+    }
+
+    const raw = jid.replace(/@.+/, '').replace(/[^\d]/g, '');
+    return `+${raw}`;
+  }
+
+  /**
    * Process individual incoming message
    */
   private static async processIncomingMessage(accountId: string, msg: WAMessage): Promise<void> {
@@ -285,7 +362,7 @@ export class SessionManager {
     if (jid.includes('@broadcast') || jid === 'status@broadcast') return;
 
     // Sender phone number
-    const cleanPhone = '+' + (jid.replace(/@.+/, '').replace(/[^\d]/g, ''));
+    const cleanPhone = await this.resolvePhoneNumber(accountId, jid, msg.key.participant);
     if (!cleanPhone || cleanPhone === '+') return;
 
     const senderName = msg.pushName || '';
@@ -328,11 +405,43 @@ export class SessionManager {
       return;
     }
 
+    // Extract Quoted Message context if this message is a reply to another
+    const contextInfo =
+      contentObj.extendedTextMessage?.contextInfo ||
+      contentObj.imageMessage?.contextInfo ||
+      contentObj.videoMessage?.contextInfo ||
+      contentObj.documentMessage?.contextInfo;
+
+    let quotedContext: { text: string; sender?: string } | undefined = undefined;
+    if (contextInfo?.quotedMessage) {
+      const q = contextInfo.quotedMessage;
+      const qText =
+        q.conversation ||
+        q.extendedTextMessage?.text ||
+        q.imageMessage?.caption ||
+        (q.imageMessage ? '[صورة]' : '') ||
+        (q.documentMessage ? `[ملف ${q.documentMessage.fileName || 'مستند'}]` : '');
+
+      let qSender = contextInfo.participant || '';
+      if (qSender) {
+        const qDigits = qSender.replace(/@.+/, '').replace(/[^\d]/g, '');
+        qSender = `+${qDigits}`;
+      }
+
+      if (qText) {
+        quotedContext = {
+          text: qText,
+          sender: qSender || 'رسالة سابقة',
+        };
+      }
+    }
+
     logger.info('Inbound WhatsApp message received', {
       accountId,
       from: cleanPhone,
       messageType,
       hasMedia: Boolean(mediaInfo),
+      hasQuoted: Boolean(quotedContext),
     });
 
     await CrmSyncService.syncInboundMessage({
@@ -343,6 +452,7 @@ export class SessionManager {
       content: textContent,
       messageType,
       media: mediaInfo,
+      quoted: quotedContext,
       timestamp,
     });
   }
@@ -355,11 +465,18 @@ export class SessionManager {
     recipientPhone: string,
     content: string,
     mediaUrl?: string,
-    mediaType?: 'image' | 'video' | 'audio' | 'document'
-  ): Promise<{ success: boolean; externalMessageId?: string; error?: string }> {
-    const session = this.sessions.get(accountId);
-
+    mediaType?: 'image' | 'video' | 'audio' | 'document',
+    mediaBase64?: string,
+    fileName?: string,
+    mimeType?: string
+  ): Promise<{ success: boolean; externalMessageId?: string; mediaUrl?: string; error?: string }> {
+    // 1. Session resolution with fallback
+    let session = this.sessions.get(accountId);
     if (!session || session.status !== 'connected' || !session.socket) {
+      session = Array.from(this.sessions.values()).find((s) => s.status === 'connected' && s.socket);
+    }
+
+    if (!session || !session.socket) {
       return {
         success: false,
         error: `حساب واتساب (${accountId}) غير متصل حالياً`,
@@ -367,28 +484,74 @@ export class SessionManager {
     }
 
     try {
-      // Normalize recipient phone to JID
-      const cleanDigits = recipientPhone.replace(/[^\d]/g, '');
-      const jid = `${cleanDigits}@s.whatsapp.net`;
+      // 2. Recipient phone normalization and LID resolution
+      let cleanDigits = recipientPhone.replace(/[^\d]/g, '');
+
+      if (cleanDigits.length > 13) {
+        const resolved = await this.resolvePhoneNumber(session.accountId, `${cleanDigits}@lid`);
+        if (resolved && resolved !== `+${cleanDigits}`) {
+          cleanDigits = resolved.replace(/[^\d]/g, '');
+          logger.info('Resolved recipient LID to real phone for outbound sending', {
+            recipientPhone,
+            resolvedPhone: cleanDigits,
+          });
+        }
+      }
+
+      // Check on WhatsApp for verified JID
+      let jid = `${cleanDigits}@s.whatsapp.net`;
+      try {
+        const checkResults = await session.socket.onWhatsApp(cleanDigits);
+        if (checkResults && checkResults.length > 0 && checkResults[0].jid) {
+          jid = checkResults[0].jid;
+          logger.info('Verified WhatsApp destination JID', { jid });
+        }
+      } catch (onWaErr: any) {
+        logger.debug('onWhatsApp check skipped or failed, using standard JID', { error: onWaErr?.message });
+      }
 
       let sentMsg;
+      let returnedMediaUrl = mediaUrl;
 
-      if (mediaUrl && mediaType) {
-        // If media URL is local uploads path
+      // 3. Handle outbound media (Base64 or URL)
+      if (mediaBase64) {
+        const saved = await MediaService.saveUpload(mediaBase64, fileName, mimeType);
+        returnedMediaUrl = saved.publicUrl;
+        const buffer = await fs.promises.readFile(saved.filePath);
+
+        const mType = mediaType || (saved.mimeType.startsWith('image/') ? 'image' : 'document');
+        if (mType === 'image') {
+          sentMsg = await session.socket.sendMessage(jid, { image: buffer, caption: content || '' });
+        } else if (mType === 'video') {
+          sentMsg = await session.socket.sendMessage(jid, { video: buffer, caption: content || '' });
+        } else if (mType === 'audio') {
+          sentMsg = await session.socket.sendMessage(jid, { audio: buffer, ptt: true });
+        } else {
+          sentMsg = await session.socket.sendMessage(jid, {
+            document: buffer,
+            mimetype: saved.mimeType || 'application/octet-stream',
+            fileName: fileName || saved.fileName,
+            caption: content || '',
+          });
+        }
+      } else if (mediaUrl && mediaType) {
         let filePath: string | null = null;
-        if (mediaUrl.startsWith('/uploads/')) {
-          filePath = path.join(CONFIG.UPLOADS_DIR, mediaUrl.replace('/uploads/', ''));
+        if (mediaUrl.includes('/uploads/')) {
+          const uploadFileName = mediaUrl.split('/uploads/')[1];
+          filePath = path.join(CONFIG.UPLOADS_DIR, uploadFileName);
         }
 
         if (filePath && fs.existsSync(filePath)) {
           const buffer = await fs.promises.readFile(filePath);
           if (mediaType === 'image') {
             sentMsg = await session.socket.sendMessage(jid, { image: buffer, caption: content || '' });
+          } else if (mediaType === 'video') {
+            sentMsg = await session.socket.sendMessage(jid, { video: buffer, caption: content || '' });
           } else if (mediaType === 'document') {
             sentMsg = await session.socket.sendMessage(jid, {
               document: buffer,
-              mimetype: 'application/pdf',
-              fileName: path.basename(filePath),
+              mimetype: mimeType || 'application/pdf',
+              fileName: fileName || path.basename(filePath),
               caption: content || '',
             });
           } else if (mediaType === 'audio') {
@@ -397,7 +560,7 @@ export class SessionManager {
             sentMsg = await session.socket.sendMessage(jid, { text: content });
           }
         } else {
-          // Send external URL as media or text
+          // Send external URL as text fallback
           sentMsg = await session.socket.sendMessage(jid, { text: `${content}\n${mediaUrl}`.trim() });
         }
       } else {
@@ -408,18 +571,19 @@ export class SessionManager {
       const externalMessageId = sentMsg?.key?.id || `out_${Date.now()}`;
 
       logger.info('Outbound message sent successfully', {
-        accountId,
-        to: cleanDigits,
+        accountId: session.accountId,
+        to: jid,
         externalMessageId,
       });
 
       return {
         success: true,
         externalMessageId,
+        mediaUrl: returnedMediaUrl,
       };
     } catch (err: any) {
       logger.error('Failed to send outbound WhatsApp message', {
-        accountId,
+        accountId: session.accountId,
         error: err?.message,
       });
       return {

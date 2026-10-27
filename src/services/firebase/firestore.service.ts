@@ -19,6 +19,25 @@ import type { CollectionName } from './collections';
  * Base Firestore Service with Type Safety.
  * Prevents raw Firestore calls in UI components and provides centralized error handling.
  */
+/**
+ * Recursively removes undefined fields from an object to comply with Firestore specifications.
+ */
+function removeUndefinedFields<T>(obj: T): T {
+  if (obj === null || obj === undefined || typeof obj !== 'object') {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefinedFields) as unknown as T;
+  }
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      clean[key] = removeUndefinedFields(value);
+    }
+  }
+  return clean as T;
+}
+
 export class FirestoreService {
   /**
    * Fetch a single document by ID
@@ -76,7 +95,8 @@ export class FirestoreService {
   static async set<T extends DocumentData>(colName: CollectionName, id: string, data: T, merge = true): Promise<void> {
     if (!isFirebaseConfigured) return;
     const docRef = doc(db, colName, id);
-    await setDoc(docRef, data, { merge });
+    const cleanData = removeUndefinedFields(data);
+    await setDoc(docRef, cleanData, { merge });
   }
 
   /**
@@ -85,7 +105,8 @@ export class FirestoreService {
   static async update<T extends DocumentData>(colName: CollectionName, id: string, data: Partial<T>): Promise<void> {
     if (!isFirebaseConfigured) return;
     const docRef = doc(db, colName, id);
-    await updateDoc(docRef, data as DocumentData);
+    const cleanData = removeUndefinedFields(data);
+    await updateDoc(docRef, cleanData as DocumentData);
   }
 
   /**

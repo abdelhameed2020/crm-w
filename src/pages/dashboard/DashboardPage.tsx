@@ -15,7 +15,7 @@ import type { DashboardMetrics } from '../../types/report.types';
 import { useAuth } from '../../hooks/useAuth';
 
 export const DashboardPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, firebaseUser } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalConversations: 0,
     newConversations: 0,
@@ -88,7 +88,7 @@ export const DashboardPage: React.FC = () => {
     },
     {
       title: 'إجمالي المبيعات',
-      value: `${metrics.salesTotal.toLocaleString()} ر.س`,
+      value: `${metrics.salesTotal.toLocaleString()} ج.م`,
       icon: TrendingUp,
       color: 'text-rose-600 bg-rose-50 border-rose-200',
       description: 'الصفقات المكتملة في مسار المبيعات',
@@ -112,9 +112,24 @@ export const DashboardPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+          {firebaseUser?.uid && (
+            <span
+              className="text-[11px] bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700 text-slate-400 font-mono select-all"
+              title="معرف الحساب الفعلي (Auth UID)"
+            >
+              UID: <strong className="text-slate-200">{firebaseUser.uid}</strong>
+            </span>
+          )}
           <span className="text-xs bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700 text-slate-300">
-            الدور الحالي: <strong className="text-brand-300">{user?.role}</strong>
+            الدور الحالي:{' '}
+            <strong className="text-brand-300">
+              {user?.role === 'admin'
+                ? 'مدير نظام'
+                : user?.role === 'manager'
+                ? 'مدير فريق'
+                : 'موظف'}
+            </strong>
           </span>
         </div>
       </div>

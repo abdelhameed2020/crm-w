@@ -1,0 +1,35 @@
+version: '3.8'
+
+# ==============================================================================
+# WhatsApp Gateway - Production Docker Compose
+# Manages the container lifecycle, restart policies, and persistent storage
+# ==============================================================================
+services:
+  whatsapp-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omnicrm-whatsapp-gateway
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    volumes:
+      # Persistent named volumes for session encryption keys and customer media
+      - gateway_sessions:/app/sessions
+      - gateway_uploads:/app/uploads
+      # Optional service account key mount (uncomment when deploying with Admin credentials)
+      # - ./serviceAccountKey.json:/app/serviceAccountKey.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  gateway_sessions:
+    name: omnicrm_gateway_sessions
+  gateway_uploads:
+    name: omnicrm_gateway_uploads

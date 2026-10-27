@@ -1,5 +1,4 @@
 import {
-  orderBy,
   where,
   limit,
   type Unsubscribe,
@@ -21,10 +20,12 @@ export class MessagesService {
       COLLECTIONS.MESSAGES,
       [
         where('conversationId', '==', conversationId),
-        orderBy('timestamp', 'asc'),
-        limit(100),
+        limit(150),
       ],
-      callback,
+      (items) => {
+        const sorted = [...items].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        callback(sorted);
+      },
       onError
     );
   }

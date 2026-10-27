@@ -90,4 +90,57 @@ export class MediaService {
       return null;
     }
   }
+
+  /**
+   * Save uploaded media from client (base64 string or data URL)
+   */
+  static async saveUpload(
+    base64Data: string,
+    originalName?: string,
+    mimeType?: string
+  ): Promise<SavedMediaInfo> {
+    let cleanBase64 = base64Data;
+    let detectedMime = mimeType || 'application/octet-stream';
+
+    if (base64Data.startsWith('data:')) {
+      const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        detectedMime = match[1];
+        cleanBase64 = match[2];
+      }
+    }
+
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    let ext = 'bin';
+
+    if (detectedMime.includes('jpeg') || detectedMime.includes('jpg')) ext = 'jpg';
+    else if (detectedMime.includes('png')) ext = 'png';
+    else if (detectedMime.includes('webp')) ext = 'webp';
+    else if (detectedMime.includes('gif')) ext = 'gif';
+    else if (detectedMime.includes('pdf')) ext = 'pdf';
+    else if (detectedMime.includes('mp4')) ext = 'mp4';
+    else if (detectedMime.includes('ogg') || detectedMime.includes('audio')) ext = 'ogg';
+    else if (originalName && path.extname(originalName)) ext = path.extname(originalName).replace('.', '');
+
+    const randomSuffix = crypto.randomBytes(6).toString('hex');
+    const fileName = `out_${Date.now()}_${randomSuffix}.${ext}`;
+    const filePath = path.join(CONFIG.UPLOADS_DIR, fileName);
+
+    await fs.promises.writeFile(filePath, buffer);
+    const publicUrl = `/uploads/${fileName}`;
+
+    logger.info('Outbound media upload saved', {
+      fileName,
+      sizeBytes: buffer.length,
+      mimeType: detectedMime,
+    });
+
+    return {
+      fileName,
+      filePath,
+      publicUrl,
+      mimeType: detectedMime,
+      fileSizeBytes: buffer.length,
+    };
+  }
 }

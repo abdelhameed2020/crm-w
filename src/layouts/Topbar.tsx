@@ -1,6 +1,7 @@
 import React from 'react';
 import { Menu, Search, Bell, Database, Radio } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useAgentPresence } from '../hooks/useAgentPresence';
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -8,6 +9,7 @@ interface TopbarProps {
 
 export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
   const { isFirebaseReady, user } = useAuth();
+  const { currentStatus, setPresenceStatus } = useAgentPresence();
 
   return (
     <header className="h-16 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
@@ -32,7 +34,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
       </div>
 
       {/* Left side: System status & Actions */}
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* Firebase Environment Status Indicator */}
         <div
           title={isFirebaseReady ? 'متصل بقاعدة بيانات Firebase المباشرة' : 'وضع التطوير التجريبي المبدئي (بانتظار مفاتيح .env)'}
@@ -61,10 +63,42 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
           <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-brand-500 ring-2 ring-white"></span>
         </button>
 
-        {/* User Avatar Chip */}
+        {/* User Presence & Avatar Chip */}
         <div className="flex items-center gap-2 pr-2 border-r border-slate-200">
-          <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs">
+          {/* Presence Status Selector */}
+          <select
+            value={currentStatus}
+            onChange={(e) => setPresenceStatus(e.target.value as any)}
+            title="حالة التواجد لاستقبال المحادثات"
+            className={`text-xs font-bold rounded-full px-2 py-1 border transition-colors cursor-pointer focus:outline-none ${
+              currentStatus === 'available'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                : currentStatus === 'busy'
+                ? 'bg-amber-50 text-amber-700 border-amber-300'
+                : currentStatus === 'away'
+                ? 'bg-orange-50 text-orange-700 border-orange-300'
+                : 'bg-slate-100 text-slate-600 border-slate-300'
+            }`}
+          >
+            <option value="available">🟢 متاح</option>
+            <option value="busy">🟡 مشغول</option>
+            <option value="away">🟠 استراحة</option>
+            <option value="offline">⚪ غير متصل</option>
+          </select>
+
+          <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs relative">
             {user?.displayName?.charAt(0) || 'U'}
+            <span
+              className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-white ${
+                currentStatus === 'available'
+                  ? 'bg-emerald-500'
+                  : currentStatus === 'busy'
+                  ? 'bg-amber-500'
+                  : currentStatus === 'away'
+                  ? 'bg-orange-500'
+                  : 'bg-slate-400'
+              }`}
+            />
           </div>
           <span className="hidden sm:inline text-xs font-bold text-slate-700 max-w-[100px] truncate">
             {user?.displayName}

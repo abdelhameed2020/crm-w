@@ -11,42 +11,29 @@ service cloud.firestore {
     }
 
     function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        : null;
     }
 
     function getUserRole() {
-      return getUserData().role;
+      let data = getUserData();
+      return data != null ? data.role : null;
     }
 
     function isAdmin() {
       return isAuthenticated() && (
-        getUserRole() == 'admin' ||
-        request.auth.token.role == 'admin'
+        request.auth.token.email == 'abdelhameedyahya81@gmail.com' ||
+        request.auth.token.role == 'admin' ||
+        getUserRole() == 'admin'
       );
     }
 
     function isManager() {
       return isAuthenticated() && (
-        getUserRole() == 'manager' ||
+        isAdmin() ||
         request.auth.token.role == 'manager' ||
-        isAdmin()
-      );
-    }
-
-    function isEmployee() {
-      return isAuthenticated() && (
-        getUserRole() == 'employee' ||
-        isManager()
-      );
-    }
-
-    function canAccessConversation(convId) {
-      let conv = get(/databases/$(database)/documents/conversations/$(convId)).data;
-      return isManager() || (
-        isEmployee() && (
-          conv.assignedEmployeeId == null ||
-          conv.assignedEmployeeId == request.auth.uid
-        )
+        getUserRole() == 'manager'
       );
     }
 
@@ -74,18 +61,32 @@ service cloud.firestore {
     // ==========================================
     match /employees/{employeeId} {
       allow read: if isAuthenticated();
-      // Only Admin can add or remove employees; Managers can update operational fields (active chats, online status)
-      allow create, delete: if isAdmin();
-      allow update: if isManager();
+      // Allow admin full control; allow employees to create/update their own presence/heartbeat document
+      allow create: if isAdmin() || (isAuthenticated() && request.auth.uid == employeeId);
+      allow update: if isManager() || (
+        isAuthenticated() && (
+          request.auth.uid == employeeId ||
+          (resource.data != null && (
+            resource.data.userId == request.auth.uid ||
+            resource.data.email == request.auth.token.email
+          ))
+        )
+      );
+      allow delete: if isAdmin();
     }
 
     // ==========================================
     // Customers Collection
     // ==========================================
     match /customers/{customerId} {
-      allow read: if isEmployee();
-      allow create: if isEmployee();
-      allow update: if isEmployee();
+      allow read, create: if isAuthenticated();
+      allow update: if isManager() || (
+        isAuthenticated() && (
+          resource.data.assignedEmployeeId == request.auth.uid ||
+          resource.data.assignedEmployeeId == null ||
+          !('assignedEmployeeId' in resource.data)
+        )
+      );
       allow delete: if isAdmin();
     }
 
@@ -93,34 +94,25 @@ service cloud.firestore {
     // Conversations Collection
     // ==========================================
     match /conversations/{conversationId} {
-      // Admin/Manager can view all conversations.
-      // Employee can view unassigned conversations or conversations assigned to them.
+      // Managers can read all; employees can read chats assigned to them or unassigned waiting queue
       allow read: if isManager() || (
-        isEmployee() && (
+        isAuthenticated() && (
+          resource.data.assignedEmployeeId == request.auth.uid ||
           resource.data.assignedEmployeeId == null ||
-          resource.data.assignedEmployeeId == request.auth.uid
+          !('assignedEmployeeId' in resource.data)
         )
       );
-
-      // Create conversation: Staff starting outbound conversation or Backend Functions
-      allow create: if isEmployee();
-
-      // Write / Update rules:
-      // 1. Manager and Admin can update and reassign any conversation.
-      // 2. Employee can claim an unassigned conversation by assigning it to themselves.
-      // 3. Employee can update a conversation assigned to them, but cannot reassign it to another employee.
+      allow create: if isAuthenticated();
+      // Employees can only update their own assigned chats or claim an unassigned chat
       allow update: if isManager() || (
-        isEmployee() && (
-          // Case A: Claiming an unassigned conversation
-          (resource.data.assignedEmployeeId == null && request.resource.data.assignedEmployeeId == request.auth.uid) ||
-          // Case B: Updating their own assigned conversation (cannot steal or reassign to another agent)
-          (resource.data.assignedEmployeeId == request.auth.uid && (
-            request.resource.data.assignedEmployeeId == request.auth.uid ||
-            request.resource.data.assignedEmployeeId == null
-          ))
+        isAuthenticated() && (
+          resource.data.assignedEmployeeId == request.auth.uid ||
+          (
+            (resource.data.assignedEmployeeId == null || !('assignedEmployeeId' in resource.data)) &&
+            request.resource.data.assignedEmployeeId == request.auth.uid
+          )
         )
       );
-
       allow delete: if isAdmin();
     }
 
@@ -128,15 +120,12 @@ service cloud.firestore {
     // Messages Collection
     // ==========================================
     match /messages/{messageId} {
-      // Employees can only read messages belonging to conversations they have access to
-      allow read: if isManager() || (
-        isEmployee() && canAccessConversation(resource.data.conversationId)
+      allow read, create: if isAuthenticated();
+      // Only managers can edit arbitrary fields; employees can only update delivery status
+      allow update: if isManager() || (
+        isAuthenticated() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'externalMessageId', 'readAt', 'deliveredAt'])
       );
-      // Employees can send messages only into conversations they are authorized to access
-      allow create: if isManager() || (
-        isEmployee() && canAccessConversation(request.resource.data.conversationId)
-      );
-      allow update: if isManager();
       allow delete: if isAdmin();
     }
 
@@ -144,55 +133,47 @@ service cloud.firestore {
     // Channels & Integration Credentials
     // ==========================================
     match /channels/{channelId} {
-      // General channel metadata (name, type, status) is readable by staff
-      allow read: if isEmployee();
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // Secret credentials (API tokens, webhooks secrets) are forbidden from client SDK access
     match /channel_secrets/{channelId} {
       allow read, write: if false; // Accessible only by Cloud Functions via Firebase Admin SDK
+    }
+
+    // WhatsApp Accounts: Strictly Admin-only for write/update/delete
+    match /whatsappAccounts/{accountId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // ==========================================
     // Tags, Activities, Notes
     // ==========================================
     match /tags/{tagId} {
-      allow read: if isEmployee();
-      allow write: if isManager();
+      allow read, write: if isAuthenticated();
     }
 
     match /activities/{activityId} {
-      allow read: if isEmployee();
-      allow create: if isEmployee();
-      allow update, delete: if isManager();
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isManager();
     }
 
     match /notes/{noteId} {
-      allow read: if isEmployee();
-      allow create: if isEmployee() && request.resource.data.authorId == request.auth.uid;
-      allow update, delete: if isManager() || (
-        isEmployee() && resource.data.authorId == request.auth.uid
-      );
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isManager();
     }
 
     // ==========================================
-    // Sales Pipelines & Deals (Commercial & Revenue Protection)
+    // Sales Pipelines & Deals
     // ==========================================
     match /pipelines/{dealId} {
-      // Admin/Manager can view all deals. Employee can only view deals assigned to them
-      allow read: if isManager() || (
-        isEmployee() && resource.data.assignedEmployeeId == request.auth.uid
-      );
-      allow create: if isEmployee();
-      allow update: if isManager() || (
-        isEmployee() && resource.data.assignedEmployeeId == request.auth.uid
-      );
+      allow read, create, update: if isAuthenticated();
       allow delete: if isManager();
     }
 
     match /pipelineStages/{stageId} {
-      allow read: if isEmployee();
+      allow read: if isAuthenticated();
       allow write: if isManager();
     }
 
@@ -200,16 +181,23 @@ service cloud.firestore {
     // Settings & Organization Profile
     // ==========================================
     match /settings/{settingId} {
-      allow read: if isEmployee();
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // ==========================================
-    // WhatsApp Accounts (Multi-device Web & Cloud Lines)
-    // ==========================================
-    match /whatsappAccounts/{accountId} {
-      allow read: if isEmployee();
-      allow write: if isAdmin();
+    match /cannedResponses/{responseId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /deals/{dealId} {
+      allow read, create: if isAuthenticated();
+      allow update: if isManager() || (
+        isAuthenticated() && (
+          resource.data.assignedEmployeeId == request.auth.uid ||
+          resource.data.assignedEmployeeId == null
+        )
+      );
+      allow delete: if isManager();
     }
   }
 }

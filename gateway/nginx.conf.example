@@ -1,0 +1,51 @@
+# ==============================================================================
+# Nginx Reverse Proxy Configuration Example for WhatsApp Gateway
+# Path: /etc/nginx/sites-available/wa-gateway.conf
+# ==============================================================================
+# Replace wa-gateway.yourdomain.com with your actual subdomain/domain.
+# Run certbot --nginx -d wa-gateway.yourdomain.com to install free Let's Encrypt SSL.
+# ==============================================================================
+
+server {
+    listen 80;
+    server_name wa-gateway.yourdomain.com;
+
+    # Redirect all HTTP traffic to HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name wa-gateway.yourdomain.com;
+
+    # SSL Certificates (managed automatically by certbot)
+    ssl_certificate /etc/letsencrypt/live/wa-gateway.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/wa-gateway.yourdomain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # Client body limit for media uploads (voice notes, images, catalogs)
+    client_max_body_size 30M;
+
+    location / {
+        proxy_pass http://127.0.0.1:5001;
+        proxy_http_version 1.1;
+
+        # WebSocket support (Required for real-time Baileys sync)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Standard Proxy Headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts for long-polling and persistent connections
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_connect_timeout 60s;
+    }
+}

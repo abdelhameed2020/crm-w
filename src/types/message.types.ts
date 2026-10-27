@@ -58,6 +58,7 @@ export interface Message {
   content: string;
   messageType: MessageType;
   media?: MediaAttachment[];
+  mediaUrl?: string;
   location?: LocationPayload;
   template?: TemplatePayload;
   status: MessageStatus;
