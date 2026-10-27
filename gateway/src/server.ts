@@ -12,6 +12,14 @@ import { CrmSyncService } from './crm-sync.service.js';
 export function createServer(): express.Express {
   const app = express();
 
+  // Support Chrome Private Network Access (PNA) for public HTTPS frontends (e.g. Vercel) connecting to local gateway
+  app.use((req, res, next) => {
+    if (req.headers['access-control-request-private-network']) {
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    }
+    next();
+  });
+
   // Strict CORS: Allow local frontend dev servers or trusted production origins
   app.use(
     cors({
@@ -20,7 +28,8 @@ export function createServer(): express.Express {
         const isAllowed = origin && (
           CONFIG.ALLOWED_ORIGINS.includes(origin) ||
           origin.endsWith('.web.app') ||
-          origin.endsWith('.firebaseapp.com')
+          origin.endsWith('.firebaseapp.com') ||
+          origin.endsWith('.vercel.app')
         );
 
         if (isLocal || isAllowed) {
@@ -31,7 +40,7 @@ export function createServer(): express.Express {
         }
       },
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'x-gateway-key'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-gateway-key', 'Access-Control-Request-Private-Network'],
       credentials: true,
     })
   );
@@ -56,7 +65,8 @@ export function createServer(): express.Express {
     const isAllowedReferer = referer && (
       CONFIG.ALLOWED_ORIGINS.some((allowed) => referer.startsWith(allowed)) ||
       referer.includes('.web.app') ||
-      referer.includes('.firebaseapp.com')
+      referer.includes('.firebaseapp.com') ||
+      referer.includes('.vercel.app')
     );
 
     if (isLocalReferer || isAllowedReferer || clientKey === CONFIG.GATEWAY_API_KEY || (authHeader && authHeader.startsWith('Bearer '))) {
